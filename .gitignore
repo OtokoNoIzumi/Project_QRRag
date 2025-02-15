@@ -6,3 +6,5 @@ __pycache__
 Log
 debug_info.log
 localhost+1*.pem
+generated*.png
+auth_config.*
