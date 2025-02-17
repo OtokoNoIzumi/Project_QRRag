@@ -192,74 +192,94 @@ def generate_images(
 ) -> tuple[str, str]:
     """处理图片生成请求"""
     try:
-        # 1. 如果没有上传图片，直接返回
+        # 1. 基础检查
         if image_input1 is None and image_input2 is None:
             return None, None
 
-        # 处理所有输入图片
-        captions = []
-        all_cached = True  # 用于跟踪是否所有caption都命中缓存
+        # 2. 预检查所有缓存状态
+        image_data = []
+        all_caption_cached = True
+
+        # 检查图片描述缓存
         for image_input in [image_input1, image_input2]:
             if image_input is not None:
-                # 生成base64
-                image_base64 = generate_image_base64(image_input)
+                base64_str = generate_image_base64(image_input)
+                cached_caption = get_cached_caption(base64_str)
+                image_data.append((base64_str, cached_caption))
+                if cached_caption is None:
+                    all_caption_cached = False
 
-                # 检查缓存中是否有caption
-                caption = get_cached_caption(image_base64)
-                if caption is None:
-                    caption = gradio_generate_caption(image_base64)
-                    if caption:
-                        cache_caption(image_base64, caption)
-                    all_cached = False  # 只要有一个caption没有命中缓存，就设为False
-                if caption:
-                    captions.append(caption)
+        # 检查story prompt缓存
+        if all_caption_cached:
+            caption_text = "|".join(
+                caption for _, caption in image_data
+            )
+            story_prompt_cached = get_cached_story_prompt(
+                caption_text,
+                style_key,
+                additional_text
+            ) is not None if caption_text else False
+        else:
+            story_prompt_cached = False
+
+        # 打印缓存状态
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        print(
+            f"[{current_time}] 生成图片 | "
+            f"素材提示词缓存: {'启用' if all_caption_cached else '未启用'} | "
+            f"最终提示词缓存: {'启用' if story_prompt_cached else '未启用'}"
+        )
+
+        # 3. 处理图片描述
+        captions = []
+        for base64_str, cached_caption in image_data:
+            if cached_caption:
+                captions.append(cached_caption)
+            else:
+                new_caption = gradio_generate_caption(base64_str)
+                if new_caption:
+                    cache_caption(base64_str, new_caption)
+                    captions.append(new_caption)
 
         if not captions:
             return None, None
 
-        # 2. 获取风格提示词
-        style_prompt = DEFAULT_STYLE_PROMPT_DICT.get(style_key, "")
+        if not story_prompt_cached:
+            caption_text = "|".join(captions)
 
-        # 3. 检查story prompt缓存
-        # 使用所有caption拼接作为缓存key
-        caption_text = "|".join(captions)
+        # 4. 获取故事提示词
         final_prompt = get_cached_story_prompt(caption_text, style_key, additional_text)
-        story_cache_used = final_prompt is not None
-
         if final_prompt is None:
-            # 如果缓存中没有，则生成新的story prompt
             final_prompt = gradio_generate_story_board(
                 characters=captions,
-                style_prompt=style_prompt,
-                additional_input=additional_text,
-                # cookies=auth_config.cookies
+                style_prompt=DEFAULT_STYLE_PROMPT_DICT.get(style_key, ""),
+                additional_input=additional_text
             )
             if final_prompt:
                 cache_story_prompt(caption_text, style_key, additional_text, final_prompt)
 
-        # 打印日志
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{current_time}] 生成图片 | 素材提示词缓存: {'启用' if all_cached else '未启用'} | "
-              f"最终提示词缓存: {'启用' if story_cache_used else '未启用'} | "
-              f"最终Prompt: \n{final_prompt}")
+        # 5. 生成图片
+        if not final_prompt:
+            return None, None
 
-        # 4. 生成图片
-        if final_prompt:
-            image_files = gradio_generate_image_fx(
-                prompt=final_prompt,
-                # auth_token=auth_config.auth_token,
-                output_prefix=(
-                    IMAGE_CACHE_DIR +
-                    r"\generated_image_" +
-                    datetime.now().strftime("%Y%m%d")
-                ),
-                image_number=2
-            )
-            # 获取第一张和第二张生成的图片
-            first_image = image_files[0] if image_files else None
-            second_image = image_files[1] if len(image_files) > 1 else None
-            return first_image, second_image
-        return None, None
+        print(f"最终Prompt: \n{final_prompt}")
+
+        existing_files = [f for f in os.listdir(IMAGE_CACHE_DIR) if f.startswith(f'generated_image_{datetime.now().strftime("%Y%m%d")}')]
+        file_count = len(existing_files)
+
+        image_files = gradio_generate_image_fx(
+            prompt=final_prompt,
+            output_prefix=os.path.join(
+                IMAGE_CACHE_DIR,
+                f"generated_image_{datetime.now().strftime('%Y%m%d')}_take{file_count + 1}"
+            ),
+            image_number=2
+        )
+
+        return (
+            image_files[0] if image_files else None,
+            image_files[1] if len(image_files) > 1 else None
+        )
 
     except Exception as e:
         print(f"Error generating images: {e}")
