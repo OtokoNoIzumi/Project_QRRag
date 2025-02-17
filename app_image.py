@@ -7,8 +7,8 @@ import sys
 import hashlib
 import json
 from datetime import datetime
+from typing import Optional, List, Dict
 import gradio as gr
-
 # ===== 2. 初始化配置 =====
 # 获取当前文件所在目录的绝对路径
 if "__file__" in globals():
@@ -29,20 +29,14 @@ from Module.Common.scripts.llm.utils.google_whisk import (
     generate_image_fx,
     generate_story_board,
     DEFAULT_STYLE_PROMPT_DICT,
+    DEFAULT_HEADERS,
+    AspectRatio,
+    Category
 )
-
-
-class AuthConfig:
-    """认证配置"""
-    def __init__(self):
-        self.cookies = config.get("cookies", "")
-        self.auth_token = config.get("auth_token", "")
-
-
-with open(os.path.join(current_dir, "auth_config.json"), 'r', encoding='utf-8') as f:
-    config = json.load(f)
-
-auth_config = AuthConfig()
+from Module.Common.scripts.common.auth_manager import (
+    AuthKeeper,
+    sustain_auth
+)
 
 # 缓存文件路径
 CACHE_DIR = "cache"
@@ -53,6 +47,10 @@ IMAGE_CACHE_DIR = os.path.join(current_dir, CACHE_DIR, "image")
 # 创建缓存目录
 os.makedirs(os.path.join(current_dir, CACHE_DIR), exist_ok=True)
 os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
+
+# 全局变量初始化
+image_caption_cache = {}
+story_prompt_cache = {}
 
 
 # 加载缓存
@@ -126,55 +124,130 @@ def cache_story_prompt(caption: str, style_key: str, additional_text: str, promp
     save_cache()
 
 
+gradio_auth_keeper = AuthKeeper(
+    config_path=os.path.join(current_dir, "auth_config.json"),
+    default_headers=DEFAULT_HEADERS
+)
+
+gradio_sustain_auth_cookies = sustain_auth(gradio_auth_keeper, 'cookies')
+gradio_sustain_auth_token = sustain_auth(gradio_auth_keeper, 'auth_token')
+
+
+@gradio_sustain_auth_cookies
+def gradio_generate_caption(
+    image_base64: str,
+    category: Category = Category.CHARACTER,
+    cookies: Optional[str] = None,  # 显式声明装饰器将注入的参数
+) -> Dict:
+    """生成图片描述包装函数"""
+    return generate_caption(image_base64, category, cookies)
+
+
+@gradio_sustain_auth_cookies
+def gradio_generate_story_board(
+    characters: Optional[List[str]] = None,
+    style_prompt: Optional[str] = None,
+    location_prompt: Optional[str] = None,
+    pose_prompt: Optional[str] = None,
+    additional_input: str = "",
+    cookies: Optional[str] = None,  # 显式声明装饰器将注入的参数
+) -> Dict:
+    """生成故事提示词包装函数"""
+    return generate_story_board(
+        characters,
+        style_prompt,
+        location_prompt,
+        pose_prompt,
+        additional_input,
+        cookies
+    )
+
+
+@gradio_sustain_auth_token
+def gradio_generate_image_fx(
+    prompt: str,
+    seed: Optional[int] = None,
+    aspect_ratio: AspectRatio = AspectRatio.LANDSCAPE,
+    output_prefix: str = "generated_image",
+    image_number: int = 4,
+    auth_token: Optional[str] = None,  # 显式声明装饰器将注入的参数
+) -> Dict:
+    """生成图片包装函数"""
+    return generate_image_fx(
+        prompt,
+        seed,
+        aspect_ratio,
+        output_prefix,
+        image_number,
+        auth_token
+    )
+
+
 # 在 demo 定义之前添加函数
-def generate_images(image_input, style_key, additional_text):
+def generate_images(
+    image_input1: str,
+    image_input2: str,
+    style_key: str,
+    additional_text: str
+) -> tuple[str, str]:
     """处理图片生成请求"""
     try:
         # 1. 如果没有上传图片，直接返回
-        if image_input is None:
+        if image_input1 is None and image_input2 is None:
             return None, None
 
-        # 直接使用文件路径生成base64
-        image_base64 = generate_image_base64(image_input)
+        # 处理所有输入图片
+        captions = []
+        all_cached = True  # 用于跟踪是否所有caption都命中缓存
+        for image_input in [image_input1, image_input2]:
+            if image_input is not None:
+                # 生成base64
+                image_base64 = generate_image_base64(image_input)
 
-        # 2. 检查缓存中是否有caption
-        caption = get_cached_caption(image_base64)
-        caption_cache_used = caption is not None
-        if caption is None:
-            # 如果缓存中没有，则生成新的caption
-            caption = generate_caption(image_base64, cookies=auth_config.cookies)
-            if caption:
-                cache_caption(image_base64, caption)
+                # 检查缓存中是否有caption
+                caption = get_cached_caption(image_base64)
+                if caption is None:
+                    caption = gradio_generate_caption(image_base64)
+                    if caption:
+                        cache_caption(image_base64, caption)
+                    all_cached = False  # 只要有一个caption没有命中缓存，就设为False
+                if caption:
+                    captions.append(caption)
+
+        if not captions:
+            return None, None
 
         # 2. 获取风格提示词
         style_prompt = DEFAULT_STYLE_PROMPT_DICT.get(style_key, "")
 
         # 3. 检查story prompt缓存
-        final_prompt = get_cached_story_prompt(caption, style_key, additional_text)
+        # 使用所有caption拼接作为缓存key
+        caption_text = "|".join(captions)
+        final_prompt = get_cached_story_prompt(caption_text, style_key, additional_text)
         story_cache_used = final_prompt is not None
+
         if final_prompt is None:
             # 如果缓存中没有，则生成新的story prompt
-            style_prompt = DEFAULT_STYLE_PROMPT_DICT.get(style_key, "")
-            final_prompt = generate_story_board(
-                characters=[caption] if caption else [],
+            final_prompt = gradio_generate_story_board(
+                characters=captions,
                 style_prompt=style_prompt,
                 additional_input=additional_text,
-                cookies=auth_config.cookies
+                # cookies=auth_config.cookies
             )
             if final_prompt:
-                cache_story_prompt(caption, style_key, additional_text, final_prompt)
+                cache_story_prompt(caption_text, style_key, additional_text, final_prompt)
 
         # 打印日志
         current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-        print(f"[{current_time}] 生成图片 | 素材提示词缓存: {'启用' if caption_cache_used else '未启用'} | "
+        print(f"[{current_time}] 生成图片 | 素材提示词缓存: {'启用' if all_cached else '未启用'} | "
               f"最终提示词缓存: {'启用' if story_cache_used else '未启用'} | "
               f"最终Prompt: \n{final_prompt}")
 
         # 4. 生成图片
         if final_prompt:
-            image_files = generate_image_fx(
+            image_files = gradio_generate_image_fx(
                 prompt=final_prompt,
-                auth_token=auth_config.auth_token,
+                # auth_token=auth_config.auth_token,
                 output_prefix=(
                     IMAGE_CACHE_DIR +
                     r"\generated_image_" +
@@ -198,11 +271,17 @@ with gr.Blocks(theme="soft") as demo:
     with gr.Row():
         # 左侧输入区域
         with gr.Column(scale=1):
-            input_image = gr.Image(
-                label="上传图片",
-                type="filepath",
-                height=300  # 限制图片显示高度
-            )
+            with gr.Row():
+                input_image1 = gr.Image(
+                    label="上传图片1",
+                    type="filepath",
+                    height=300
+                )
+                input_image2 = gr.Image(
+                    label="上传图片2（可选）",
+                    type="filepath",
+                    height=300
+                )
             style_dropdown = gr.Dropdown(
                 choices=list(DEFAULT_STYLE_PROMPT_DICT.keys()),
                 value=list(DEFAULT_STYLE_PROMPT_DICT.keys())[0],
@@ -222,7 +301,7 @@ with gr.Blocks(theme="soft") as demo:
 
     generate_btn.click(
         fn=generate_images,
-        inputs=[input_image, style_dropdown, additional_text_ui],
+        inputs=[input_image1, input_image2, style_dropdown, additional_text_ui],
         outputs=[output_image1, output_image2]
     )
 
