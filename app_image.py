@@ -45,8 +45,8 @@ from Module.Common.scripts.datasource_feishu import FeishuClient
 CONFIG_PATH = os.path.join(current_dir, "config.json")
 
 # 加载配置文件
-with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
-    CONFIG = json.load(f)
+with open(CONFIG_PATH, 'r', encoding='utf-8') as config_file:
+    CONFIG = json.load(config_file)
 
 # 修改后的常量定义
 IMAGE_NUMBER = CONFIG["image_generation"]["default_image_number"]
@@ -63,10 +63,22 @@ IMAGE_CACHE_DIR = os.path.join(CACHE_DIR, CONFIG["cache"]["image_dir"])
 
 
 load_dotenv(os.path.join(current_dir, ".env"))
-app_id = os.getenv("FEISHU_APP_ID","")
-app_secret = os.getenv("FEISHU_APP_SECRET","")
+app_id = os.getenv("FEISHU_APP_ID", "")
+app_secret = os.getenv("FEISHU_APP_SECRET", "")
 
-feishu_client = FeishuClient(app_id, app_secret)
+# 改进后的飞书客户端初始化（更Pythonic的写法）
+FEISHU_CLIENT = None
+FEISHU_ENABLED = False
+if app_id and app_secret:  # 先做基础检查
+    try:
+        FEISHU_CLIENT = FeishuClient(app_id, app_secret)
+        FEISHU_CLIENT.get_access_token()  # 主动验证凭证有效性
+        FEISHU_ENABLED = True
+    except (ValueError, RuntimeError) as e:
+        print(f"⚠️ 飞书通知功能已禁用: {str(e)}")
+else:
+    print("⚠️ 飞书通知功能已禁用: 缺少FEISHU_APP_ID或FEISHU_APP_SECRET环境变量")
+
 
 class WhiskCache:
     """Whisk缓存管理类"""
@@ -340,11 +352,12 @@ class WhiskService:
 
         if error_info['status_code'] == 401:
             print(f"[{error_source}] 自动续签认证失败，详细见飞书")
-            feishu_client.send_message(
-                receive_id=FEISHU_RECEIVE_ID,
-                content={"text": "Whisk的Cookie已过期，请及时续签"},
-                msg_type="text"
-            )
+            if FEISHU_ENABLED:
+                FEISHU_CLIENT.send_message(
+                    receive_id=FEISHU_RECEIVE_ID,
+                    content={"text": "Whisk的Cookie已过期，请及时续签"},
+                    msg_type="text"
+                )
         elif error_info['status_code'] == 400:
             print(f"[{error_source}] 业务和谐，计划重试...")
             gr.Warning("图片生成失败，请换一张再试试")
