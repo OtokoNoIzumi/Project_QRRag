@@ -1,0 +1,27 @@
+{
+    "feishu": {
+        "receive_id": "ou_08158e2f511912a18063fc6072ce42da"
+    },
+    "error_patterns": {
+        "runImageFx": "step3.图片生成",
+        "generateStoryBoardPrompt": "step2.故事板生成",
+        "generateCaption": "step1.描述生成"
+    },
+    "image_generation": {
+        "default_image_number": 2,
+        "aspect_ratio": "LANDSCAPE",
+        "output_prefix_template": "generated_image_{date}_take{counter}"
+    },
+    "server": {
+        "name": "0.0.0.0",
+        "port": 80,
+        "ssl_verify": false,
+        "share": true
+    },
+    "cache": {
+        "dir": "cache",
+        "caption_file": "image_caption_cache.json",
+        "story_file": "story_prompt_cache.json",
+        "image_dir": "image"
+    }
+}

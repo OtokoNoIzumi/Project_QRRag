@@ -9,6 +9,7 @@ import json
 from datetime import datetime
 from typing import Optional, List, Dict
 from requests.exceptions import HTTPError
+from dotenv import load_dotenv
 import gradio as gr
 
 # ===== 2. 初始化配置 =====
@@ -39,13 +40,33 @@ from Module.Common.scripts.common.auth_manager import (
     AuthKeeper,
     sustain_auth
 )
+from Module.Common.scripts.datasource_feishu import FeishuClient
+
+CONFIG_PATH = os.path.join(current_dir, "config.json")
+
+# 加载配置文件
+with open(CONFIG_PATH, 'r', encoding='utf-8') as f:
+    CONFIG = json.load(f)
+
+# 修改后的常量定义
+IMAGE_NUMBER = CONFIG["image_generation"]["default_image_number"]
+ASPECT_RATIO = AspectRatio[CONFIG["image_generation"]["aspect_ratio"]]
+SERVER_PORT = CONFIG["server"]["port"]
+ERROR_PATTERNS = CONFIG["error_patterns"]
+FEISHU_RECEIVE_ID = CONFIG["feishu"]["receive_id"]
 
 # 缓存文件路径
-CACHE_DIR = "cache"
-CAPTION_CACHE_FILE = os.path.join(current_dir, CACHE_DIR, "image_caption_cache.json")
-STORY_CACHE_FILE = os.path.join(current_dir, CACHE_DIR, "story_prompt_cache.json")
-IMAGE_CACHE_DIR = os.path.join(current_dir, CACHE_DIR, "image")
+CACHE_DIR = os.path.join(current_dir, CONFIG["cache"]["dir"])
+CAPTION_CACHE_FILE = os.path.join(CACHE_DIR, CONFIG["cache"]["caption_file"])
+STORY_CACHE_FILE = os.path.join(CACHE_DIR, CONFIG["cache"]["story_file"])
+IMAGE_CACHE_DIR = os.path.join(CACHE_DIR, CONFIG["cache"]["image_dir"])
 
+
+load_dotenv(os.path.join(current_dir, ".env"))
+app_id = os.getenv("FEISHU_APP_ID","")
+app_secret = os.getenv("FEISHU_APP_SECRET","")
+
+feishu_client = FeishuClient(app_id, app_secret)
 
 class WhiskCache:
     """Whisk缓存管理类"""
@@ -174,128 +195,169 @@ class WhiskService:
         additional_text: str
     ):
         """处理图片生成请求"""
-        # 1. 基础检查
-        if not image_input1 and not image_input2:
+        # 基础参数准备
+        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        current_date = datetime.now().strftime("%Y%m%d")
+        output_prefix = os.path.join(
+            IMAGE_CACHE_DIR,
+            f"generated_image_{current_date}_take{len(os.listdir(IMAGE_CACHE_DIR)) + 1}"
+        )
+
+        # 处理指令直出模式
+        if additional_text.startswith('/img') and len(additional_text) > 4:
+            clean_prompt = additional_text[4:].strip()
+            if clean_prompt:
+                return self._handle_direct_mode(clean_prompt, current_time, output_prefix)
+
+        # 输入检查
+        if not any([image_input1, image_input2]):
             return None, None
 
-        # 2. 预处理图片数据
-        image_data = []
-        all_caption_cached = True
-        for image_input in [image_input1, image_input2]:
-            if image_input:
-                base64_str = generate_image_base64(image_input)
-                cached_caption = self.cache.get_caption(base64_str)
-                image_data.append((base64_str, cached_caption))
-                if cached_caption is None:
-                    all_caption_cached = False
-
-        # 检查story prompt缓存
-        if all_caption_cached:
-            caption_text = "|".join(
-                caption for _, caption in image_data
-            )
-            story_prompt_cached = self.cache.get_story_prompt(
-                caption_text,
-                style_key,
-                additional_text
-            ) is not None if caption_text else False
-        else:
-            story_prompt_cached = False
+        # 预处理图片数据
+        image_data = self._prepare_image_data(image_input1, image_input2)
+        all_caption_cached = all(caption for _, caption in image_data)
 
         # 打印缓存状态
-        current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        self._print_cache_status(current_time, all_caption_cached, image_data, style_key, additional_text)
+
+        try:
+            # 生成描述和故事板
+            captions = self._process_captions(image_data)
+            if not captions:
+                return None, None
+
+            # 生成最终提示词
+            final_prompt = self._get_final_prompt(captions, style_key, additional_text)
+            print(f"最终Prompt: \n{final_prompt}")
+
+            return self._generate_final_images(final_prompt, output_prefix)
+
+        except HTTPError as e:
+            return self._handle_http_error(e)
+        except Exception as e:
+            print(f"其他图片生成错误: {str(e)}")
+            return None, None
+
+    def _handle_direct_mode(self, clean_prompt, current_time, output_prefix):
+        """处理指令直出模式"""
+        print(f"[{current_time}] 指令直出，使用提示词: \n{clean_prompt}")
+        try:
+            image_files = self.generate_image_fx_wrapped(
+                prompt=clean_prompt,
+                output_prefix=output_prefix,
+                image_number=2
+            )
+            return self._format_image_output(image_files)
+        except HTTPError as e:
+            return self._handle_http_error(e)
+        except Exception as e:
+            print(f"其他图片生成错误: {str(e)}")
+            return None, None
+
+    def _prepare_image_data(self, *image_inputs):
+        """预处理图片数据"""
+        image_data = []
+        for img in image_inputs:
+            if img:
+                base64_str = generate_image_base64(img)
+                cached_caption = self.cache.get_caption(base64_str)
+                image_data.append((base64_str, cached_caption))
+        return image_data
+
+    def _print_cache_status(self, current_time, all_caption_cached, image_data, style_key, additional_text):
+        """打印缓存状态"""
+        story_prompt_cached = False
+        if all_caption_cached:
+            caption_text = "|".join(caption for _, caption in image_data)
+            story_prompt_cached = self.cache.get_story_prompt(caption_text, style_key, additional_text) is not None
+
         print(
             f"\n[{current_time}] 生成图片 | "
             f"素材提示词缓存: {'启用' if all_caption_cached else '未启用'} | "
             f"最终提示词缓存: {'启用' if story_prompt_cached else '未启用'}"
         )
 
-        try:
-            # 3. 生成描述和故事板
-            captions = []
-            for base64_str, cached_caption in image_data:
-                if not cached_caption:
-                    new_caption = self.generate_caption_wrapped(base64_str)
-                    if new_caption:
-                        self.cache.save_caption(base64_str, new_caption)
-                        captions.append(new_caption)
-                else:
-                    captions.append(cached_caption)
-
-            if not captions:
-                return None, None
-
-            # 4. 生成最终图片
-            final_prompt = self.cache.get_story_prompt(
-                "|".join(captions),
-                style_key,
-                additional_text
-            )
-            if not final_prompt:
-                final_prompt = self.generate_story_board_wrapped(
-                    characters=captions,
-                    style_prompt=DEFAULT_STYLE_PROMPT_DICT.get(style_key, ""),
-                    additional_input=additional_text
-                )
-                if final_prompt:
-                    self.cache.save_story_prompt(
-                        "|".join(captions),
-                        style_key,
-                        additional_text,
-                        final_prompt
-                    )
-
-            current_date = datetime.now().strftime("%Y%m%d")
-            output_prefix = os.path.join(
-                IMAGE_CACHE_DIR,
-                f"generated_image_{current_date}_take{len(os.listdir(IMAGE_CACHE_DIR)) + 1}"
-            )
-
-            print(f"最终Prompt: \n{final_prompt}")
-            image_files = self.generate_image_fx_wrapped(
-                prompt=final_prompt,
-                output_prefix=output_prefix,
-                image_number=2
-            )
-
-            return (
-                image_files[0] if image_files else None,
-                image_files[1] if len(image_files) > 1 else None
-            )
-
-        except HTTPError as e:
-            # 提取详细信息
-            error_info = {
-                "status_code": e.response.status_code,
-                "reason": e.response.reason,
-                "url": e.response.url,
-                "response_text": e.response.text[:200]  # 截取前200字符避免过大
-            }
-            error_source = self._detect_error_source(e.response.url)
-
-            if error_info['status_code'] == 401:
-                print(f"[{error_source}] 自动续签认证失败，添加一个飞书消息...")
-            elif error_info['status_code'] == 400:
-                print(f"[{error_source}] 业务和谐，计划重试...")
+    def _process_captions(self, image_data):
+        """处理图片描述"""
+        captions = []
+        for base64_str, cached_caption in image_data:
+            if not cached_caption:
+                new_caption = self.generate_caption_wrapped(base64_str)
+                if new_caption:
+                    self.cache.save_caption(base64_str, new_caption)
+                    captions.append(new_caption)
             else:
-                print(f"[{error_source}] 其他HTTP错误，添加一个飞书消息...")
+                captions.append(cached_caption)
+        return captions
 
-            return None, None
-            # raise  # 重新抛出或返回错误信息
-        except Exception as e:
-            print(f"其他图片生成错误: {str(e)}")
-            return None, None
+    def _get_final_prompt(self, captions, style_key, additional_text):
+        """获取最终提示词"""
+        final_prompt = self.cache.get_story_prompt(
+            "|".join(captions),
+            style_key,
+            additional_text
+        )
+        if not final_prompt:
+            final_prompt = self.generate_story_board_wrapped(
+                characters=captions,
+                style_prompt=DEFAULT_STYLE_PROMPT_DICT.get(style_key, ""),
+                additional_input=additional_text
+            )
+            if final_prompt:
+                self.cache.save_story_prompt(
+                    "|".join(captions),
+                    style_key,
+                    additional_text,
+                    final_prompt
+                )
+        return final_prompt
+
+    def _generate_final_images(self, final_prompt, output_prefix):
+        """生成最终图片"""
+        image_files = self.generate_image_fx_wrapped(
+            prompt=final_prompt,
+            output_prefix=output_prefix,
+            image_number=IMAGE_NUMBER
+        )
+        return self._format_image_output(image_files)
+
+    def _format_image_output(self, image_files):
+        """格式化图片输出"""
+        return (
+            image_files[0] if image_files else None,
+            image_files[1] if len(image_files) > 1 else None
+        )
+
+    def _handle_http_error(self, e):
+        """统一处理HTTP错误"""
+        error_info = {
+            "status_code": e.response.status_code,
+            "reason": e.response.reason,
+            "url": e.response.url,
+            "response_text": e.response.text[:200]
+        }
+        error_source = self._detect_error_source(e.response.url)
+
+        if error_info['status_code'] == 401:
+            print(f"[{error_source}] 自动续签认证失败，详细见飞书")
+            feishu_client.send_message(
+                receive_id=FEISHU_RECEIVE_ID,
+                content={"text": "Whisk的Cookie已过期，请及时续签"},
+                msg_type="text"
+            )
+        elif error_info['status_code'] == 400:
+            print(f"[{error_source}] 业务和谐，计划重试...")
+            gr.Warning("图片生成失败，请换一张再试试")
+        else:
+            print(f"[{error_source}] 其他HTTP错误，添加一个飞书消息...")
+
+        return None, None
 
     def _detect_error_source(self, url):
         """优化后的错误来源检测（直观简洁版）"""
-        error_patterns = {
-            'runImageFx': 'step3.图片生成',
-            'generateStoryBoardPrompt': 'step2.故事板生成',
-            'generateCaption': 'step1.描述生成'
-        }
         return next(
-            (v for k, v in error_patterns.items() if k in url),
-            '未知来源'  # 默认值
+            (v for k, v in ERROR_PATTERNS.items() if k in url),
+            '未知来源'
         )
 
 
@@ -341,9 +403,9 @@ with gr.Blocks(theme="soft") as demo:
 
 if __name__ == "__main__":
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=80,
-        ssl_verify=False,
-        share=True,
+        server_name=CONFIG["server"]["name"],
+        server_port=SERVER_PORT,      # 使用配置值
+        ssl_verify=CONFIG["server"]["ssl_verify"],
+        share=CONFIG["server"]["share"],
         allowed_paths=[IMAGE_CACHE_DIR]
     )
