@@ -1,0 +1,15 @@
+# 核心依赖
+Pillow
+gradio
+jinja2
+
+# 数据处理
+numpy
+
+# 开发工具（可选）
+python-dotenv
+
+# Common
+tiktoken
+openai
+solara
