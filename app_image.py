@@ -8,6 +8,7 @@ import hashlib
 import json
 from datetime import datetime
 from typing import Optional, List, Dict
+from PIL import Image
 import gradio as gr
 # ===== 2. 初始化配置 =====
 # 获取当前文件所在目录的绝对路径
@@ -183,6 +184,22 @@ def gradio_generate_image_fx(
     )
 
 
+# 添加新的测试函数
+def output_type_wrapper(image_path1, image_path2):
+    """测试不同返回类型的包装函数"""
+
+    def load_as_pil(path):
+        if path is None:
+            return None
+        return Image.open(path)
+
+    # 测试不同返回类型（按需切换注释）
+    return (
+        load_as_pil(image_path1),   # 返回PIL.Image类型
+        load_as_pil(image_path2)  # 返回numpy数组类型
+    )
+
+
 # 在 demo 定义之前添加函数
 def generate_images(
     image_input1: str,
@@ -264,7 +281,12 @@ def generate_images(
 
         print(f"最终Prompt: \n{final_prompt}")
 
-        existing_files = [f for f in os.listdir(IMAGE_CACHE_DIR) if f.startswith(f'generated_image_{datetime.now().strftime("%Y%m%d")}')]
+        current_date = datetime.now().strftime("%Y%m%d")
+        prefix = f'generated_image_{current_date}'
+        existing_files = [
+            f for f in os.listdir(IMAGE_CACHE_DIR)
+            if f.startswith(prefix)
+        ]
         file_count = len(existing_files)
 
         image_files = gradio_generate_image_fx(
@@ -276,7 +298,7 @@ def generate_images(
             image_number=2
         )
 
-        return (
+        return output_type_wrapper(
             image_files[0] if image_files else None,
             image_files[1] if len(image_files) > 1 else None
         )
@@ -328,7 +350,7 @@ with gr.Blocks(theme="soft") as demo:
 if __name__ == "__main__":
     demo.launch(
         server_name="0.0.0.0",
-        server_port=8765,
+        server_port=80,
         ssl_verify=False,
         share=True,
         allowed_paths=[IMAGE_CACHE_DIR]
