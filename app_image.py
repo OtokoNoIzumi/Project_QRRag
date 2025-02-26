@@ -362,7 +362,8 @@ class WhiskService:
             print(f"[{error_source}] 业务和谐，计划重试...")
             gr.Warning("图片生成失败，请换一张再试试")
         else:
-            print(f"[{error_source}] 其他HTTP错误，添加一个飞书消息...")
+            print(f"[{error_source}] 其他HTTP错误「{error_info['status_code']}」: "
+                  f"{error_info['reason']} - TEXT: {error_info['response_text']}")
 
         return None, None
 
