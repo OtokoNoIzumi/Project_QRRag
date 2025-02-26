@@ -416,10 +416,13 @@ with gr.Blocks(theme="soft") as demo:
     )
 
 if __name__ == "__main__":
+    share_env = os.getenv("SHARE", "False")
+    share_setting = share_env.lower() in ('true', 'yes', '1', 't', 'y')
+
     demo.launch(
         server_name=CONFIG["server"]["name"],
         server_port=SERVER_PORT,      # 使用配置值
         ssl_verify=CONFIG["server"]["ssl_verify"],
-        share=CONFIG["server"]["share"],
+        share=share_setting,
         allowed_paths=[IMAGE_CACHE_DIR]
     )

@@ -15,8 +15,7 @@
     "server": {
         "name": "0.0.0.0",
         "port": 80,
-        "ssl_verify": false,
-        "share": true
+        "ssl_verify": false
     },
     "cache": {
         "dir": "cache",
