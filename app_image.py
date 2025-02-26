@@ -53,7 +53,6 @@ IMAGE_NUMBER = CONFIG["image_generation"]["default_image_number"]
 ASPECT_RATIO = AspectRatio[CONFIG["image_generation"]["aspect_ratio"]]
 SERVER_PORT = CONFIG["server"]["port"]
 ERROR_PATTERNS = CONFIG["error_patterns"]
-FEISHU_RECEIVE_ID = CONFIG["feishu"]["receive_id"]
 
 # 缓存文件路径
 CACHE_DIR = os.path.join(current_dir, CONFIG["cache"]["dir"])
@@ -65,6 +64,7 @@ IMAGE_CACHE_DIR = os.path.join(CACHE_DIR, CONFIG["cache"]["image_dir"])
 load_dotenv(os.path.join(current_dir, ".env"))
 app_id = os.getenv("FEISHU_APP_ID", "")
 app_secret = os.getenv("FEISHU_APP_SECRET", "")
+FEISHU_RECEIVE_ID = os.getenv("RECEIVE_ID", "")
 
 # 改进后的飞书客户端初始化（更Pythonic的写法）
 FEISHU_CLIENT = None
