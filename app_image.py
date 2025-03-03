@@ -349,23 +349,28 @@ class WhiskService:
             "response_text": e.response.text[:200]
         }
         error_source = self._detect_error_source(e.response.url)
-
+        result1, result2 = None, None
         if error_info['status_code'] == 401:
             print(f"[{error_source}] 自动续签认证失败，详细见飞书")
+            gr.Warning("图片处理故障，已经通知管理员修复咯！")
             if FEISHU_ENABLED:
                 FEISHU_CLIENT.send_message(
                     receive_id=FEISHU_RECEIVE_ID,
                     content={"text": "Whisk的Cookie已过期，请及时续签"},
                     msg_type="text"
                 )
+            auth_path = os.path.join(CACHE_DIR, "close_auth.png")
+            result1, result2 = auth_path, auth_path
         elif error_info['status_code'] == 400:
             print(f"[{error_source}] 业务和谐，计划重试...")
             gr.Warning("图片生成失败，请换一张再试试")
+            filter_path = os.path.join(CACHE_DIR, "close_filter.png")
+            result1, result2 = filter_path, filter_path
         else:
             print(f"[{error_source}] 其他HTTP错误「{error_info['status_code']}」: "
                   f"{error_info['reason']} - TEXT: {error_info['response_text']}")
 
-        return None, None
+        return result1, result2
 
     def _detect_error_source(self, url):
         """优化后的错误来源检测（直观简洁版）"""
