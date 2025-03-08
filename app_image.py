@@ -4,7 +4,6 @@ whisk逆向图片生成
 """
 import os
 import sys
-import hashlib
 import json
 from datetime import datetime
 from typing import Optional, List, Dict
@@ -41,6 +40,7 @@ from Module.Common.scripts.common.auth_manager import (
     sustain_auth
 )
 from Module.Common.scripts.datasource_feishu import FeishuClient
+from Module.cache_sqlite import WhiskCache
 
 CONFIG_PATH = os.path.join(current_dir, "config.json")
 
@@ -78,48 +78,6 @@ if app_id and app_secret:  # 先做基础检查
         print(f"⚠️ 飞书通知功能已禁用: {str(e)}")
 else:
     print("⚠️ 飞书通知功能已禁用: 缺少FEISHU_APP_ID或FEISHU_APP_SECRET环境变量")
-
-
-class WhiskCache:
-    """Whisk缓存管理类"""
-    def __init__(self):
-        os.makedirs(IMAGE_CACHE_DIR, exist_ok=True)
-        self.caption_cache = self._load_cache(CAPTION_CACHE_FILE)
-        self.story_cache = self._load_cache(STORY_CACHE_FILE)
-
-    def _load_cache(self, file_path: str) -> Dict:
-        """加载缓存文件"""
-        if os.path.exists(file_path):
-            with open(file_path, 'r', encoding='utf-8') as f:
-                return json.load(f)
-        return {}
-
-    def save_cache(self, file_path: str, data: Dict):
-        """保存缓存到文件"""
-        with open(file_path, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-
-    def get_caption(self, image_base64: str):
-        """获取缓存的图片描述"""
-        hash_key = hashlib.md5(image_base64.encode()).hexdigest()
-        return self.caption_cache.get(hash_key)
-
-    def save_caption(self, image_base64: str, caption: str):
-        """缓存图片描述"""
-        hash_key = hashlib.md5(image_base64.encode()).hexdigest()
-        self.caption_cache[hash_key] = caption
-        self.save_cache(CAPTION_CACHE_FILE, self.caption_cache)
-
-    def get_story_prompt(self, caption: str, style_key: str, additional_text: str):
-        """获取缓存的故事提示词"""
-        cache_key = hashlib.md5(f"{caption}_{style_key}_{additional_text}".encode()).hexdigest()
-        return self.story_cache.get(cache_key)
-
-    def save_story_prompt(self, caption: str, style_key: str, additional_text: str, prompt: str):
-        """缓存故事提示词"""
-        cache_key = hashlib.md5(f"{caption}_{style_key}_{additional_text}".encode()).hexdigest()
-        self.story_cache[cache_key] = prompt
-        self.save_cache(STORY_CACHE_FILE, self.story_cache)
 
 
 class WhiskService:
@@ -230,7 +188,13 @@ class WhiskService:
         all_caption_cached = all(caption for _, caption in image_data)
 
         # 打印缓存状态
-        self._print_cache_status(current_time, all_caption_cached, image_data, style_key, additional_text)
+        self._print_cache_status(
+            current_time=current_time,
+            all_caption_cached=all_caption_cached,
+            image_data=image_data,
+            style_key=style_key,
+            additional_text=additional_text
+        )
 
         try:
             # 生成描述和故事板
@@ -276,12 +240,23 @@ class WhiskService:
                 image_data.append((base64_str, cached_caption))
         return image_data
 
-    def _print_cache_status(self, current_time, all_caption_cached, image_data, style_key, additional_text):
+    def _print_cache_status(
+        self,
+        current_time,
+        all_caption_cached,
+        image_data,
+        style_key,
+        additional_text
+    ):
         """打印缓存状态"""
         story_prompt_cached = False
         if all_caption_cached:
             caption_text = "|".join(caption for _, caption in image_data)
-            story_prompt_cached = self.cache.get_story_prompt(caption_text, style_key, additional_text) is not None
+            story_prompt_cached = self.cache.get_story_prompt(
+                caption_text,
+                style_key,
+                additional_text
+            ) is not None
 
         print(
             f"\n[{current_time}] 生成图片 | "

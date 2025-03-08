@@ -22,5 +22,6 @@
         "caption_file": "image_caption_cache.json",
         "story_file": "story_prompt_cache.json",
         "image_dir": "image"
-    }
+    },
+    "cache_auto_migrate": true
 }

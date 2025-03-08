@@ -8,3 +8,11 @@ debug_info.log
 localhost+1*.pem
 generated*.png
 auth_config.*
+# SQLite数据库文件
+*.db
+*.sqlite
+*.sqlite3
+# SQLite日志和临时文件
+*.db-journal
+*.db-shm
+*.db-wal
