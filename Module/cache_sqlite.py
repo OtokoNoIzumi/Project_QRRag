@@ -200,12 +200,6 @@ class WhiskCacheSQLite:
             cursor = self.conn.cursor()
             cursor.execute("SELECT caption FROM caption_cache WHERE hash_key = ?", (hash_key,))
             row = cursor.fetchone()
-            if row:
-                # 将Row对象转换为字典以便于调试
-                row_dict = dict(row)
-                print(f"获取图片描述成功: {row_dict}")
-            else:
-                print(f"未找到图片描述，hash_key: {hash_key[:8]}...")
         return row['caption'] if row else None
 
     def save_caption(self, image_base64: str, caption: str):
@@ -229,12 +223,6 @@ class WhiskCacheSQLite:
             cursor = self.conn.cursor()
             cursor.execute("SELECT prompt FROM story_cache WHERE cache_key = ?", (cache_key,))
             row = cursor.fetchone()
-            if row:
-                # 将Row对象转换为字典以便于调试
-                row_dict = dict(row)
-                print(f"获取故事提示词成功: {row_dict}")
-            else:
-                print(f"未找到故事提示词，cache_key: {cache_key[:8]}...")
         return row['prompt'] if row else None
 
     def save_story_prompt(self, caption: str, style_key: str, additional_text: str, prompt: str):
