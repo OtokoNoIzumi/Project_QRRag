@@ -38,6 +38,8 @@ from Module.Common.scripts.llm.utils.google_whisk import (
     AspectRatio
 )
 from app_image import WhiskService
+# 导入Caption服务
+from Module.core.caption_service import CaptionService
 
 # ===== 3. 初始化配置 =====
 # 加载配置
@@ -79,6 +81,28 @@ auth_service = AuthService(TOKENS_FILE)
 # 初始化图像服务
 image_service = ImageService(whisk_service, CACHE_DIR, NEZHA_CONFIG)
 
+# 初始化Caption服务
+caption_service = CaptionService(STORAGE_DIR)
+
+# 添加一个函数用于重新加载tokens
+def reload_tokens():
+    """
+    重新加载tokens配置
+
+    在每次需要验证token时调用，确保使用最新的token数据
+    """
+    global auth_service
+    if os.path.exists(TOKENS_FILE):
+        # 比较文件修改时间
+        last_modified = os.path.getmtime(TOKENS_FILE)
+        if not hasattr(auth_service, 'last_token_load') or last_modified > auth_service.last_token_load:
+            print(f"发现tokens文件已更新，重新加载: {TOKENS_FILE}")
+            # 重新初始化认证服务
+            auth_service = AuthService(TOKENS_FILE)
+            auth_service.last_token_load = last_modified
+            return True
+    return False
+
 # ===== 5. 定义处理函数 =====
 def validate_url_token(request: gr.Request) -> Tuple[bool, Optional[str], Optional[Dict]]:
     """
@@ -90,6 +114,9 @@ def validate_url_token(request: gr.Request) -> Tuple[bool, Optional[str], Option
     Returns:
         元组: (是否有效, 错误消息, 令牌数据)
     """
+    # 重新加载tokens配置
+    reload_tokens()
+
     token_id = None
 
     try:
@@ -214,6 +241,9 @@ def get_available_styles_for_token(token_id: str, theme: str) -> List[Dict]:
     Returns:
         风格选项列表
     """
+    # 重新加载tokens配置
+    reload_tokens()
+
     # 获取主题的风格列表
     theme_config = NEZHA_CONFIG.get("themes", {}).get(theme, {})
     style_prompts = theme_config.get("style_prompts", {})
@@ -227,21 +257,38 @@ def get_available_styles_for_token(token_id: str, theme: str) -> List[Dict]:
     # 获取令牌可用的风格
     style_status = auth_service.get_available_styles(token_id, all_styles)
 
+    # 获取令牌对象以检查是否可以使用更多风格
+    valid, _, token = auth_service.validate_token(token_id)
+    can_use_more = valid and token and token.can_use_more_styles
+
+    # 检查已使用的风格数量
+    used_styles_count = 0
+    if valid and token:
+        used_styles_count = len(token.used_styles)
+
     # 构造风格选项列表
     style_options = []
     for style in all_styles:
         status = style_status.get(style)
         # True: 已使用, None: 可用但未使用, False: 不可用
         label = style
+        disabled = False
+
         if status is True:
             label = f"{style} (已使用)"
-        elif status is False:
+        elif status is False or not can_use_more:
             label = f"{style} (不可用)"
+            disabled = True
+
+        # 如果超过了使用限制(3种风格)，禁用选项
+        if used_styles_count >= 3 and status is not True:
+            disabled = True
+            label = f"{style} (已达风格限制)"
 
         style_options.append({
             "value": style,
             "label": label,
-            "disabled": status is False
+            "disabled": disabled
         })
 
     return style_options
@@ -257,6 +304,9 @@ def get_token_stats(token_id: str) -> Dict:
     Returns:
         令牌统计
     """
+    # 重新加载tokens配置
+    reload_tokens()
+
     token_data = auth_service.get_token_data(token_id)
     if not token_data:
         return {
@@ -312,67 +362,133 @@ def map_style_label_to_key(style_label: str) -> str:
 def handle_upload_image(
     image,
     style_label: str,
-    additional_text: str,
     token_id: str
-) -> Tuple[Optional[str], Optional[str], str]:
+) -> Tuple[Optional[str], Optional[str], str, bool]:
     """
     处理上传图像
 
     Args:
         image: 上传的图像
         style_label: 样式标签
-        additional_text: 附加提示词
         token_id: 令牌ID
 
     Returns:
-        元组: (输出图像1, 输出图像2, 状态消息)
+        元组: (输出图像1, 输出图像2, 状态消息, 是否显示风格选择)
     """
+    # 重新加载tokens配置
+    reload_tokens()
+
     print(f"DEBUG - 上传图像: style_label={style_label}, token_id={token_id}")
 
     if not image:
-        return None, None, "请先上传图片"
+        return None, None, "请先上传图片", False
 
     if not token_id or token_id.strip() == "":
-        return None, None, "无效的访问令牌"
+        return None, None, "无效的访问令牌", False
+
+    # 获取令牌信息
+    _, _, token = auth_service.validate_token(token_id)
+    if token is None:
+        return None, None, "无效的访问令牌", False
 
     # 计算图像哈希检查令牌是否已使用过其他图片
     image_hash = calculate_image_hash(image)
     is_valid, error_msg = auth_service.validate_image_hash(token_id, image_hash)
     if not is_valid:
-        return None, None, error_msg
+        return None, None, error_msg, False
 
-    if not style_label or style_label.strip() == "":
-        # 如果没有选择风格，获取默认风格
-        _, _, token = auth_service.validate_token(token_id)
-        if token is None:
-            return None, None, "无效的访问令牌"
+    theme = token.theme
+    theme_config = NEZHA_CONFIG.get("themes", {}).get(theme, {})
 
-        theme = token.theme
-        theme_config = NEZHA_CONFIG.get("themes", {}).get(theme, {})
+    # 将标签映射到实际的风格键名
+    style_key = ""
+    if style_label and style_label.strip():
+        style_key = map_style_label_to_key(style_label)
+
+        # 验证风格是否可用
+        if style_key not in token.used_styles and not token.can_use_more_styles:
+            return None, None, "您已达到风格使用上限", True
+    else:
+        # 如果没有选择风格或风格为空，使用默认风格
         default_style = theme_config.get("default_style", "")
-
         if not default_style:
             # 如果没有默认风格，使用第一个可用风格
             style_prompts = theme_config.get("style_prompts", {})
             if style_prompts:
                 style_key = list(style_prompts.keys())[0]
             else:
-                return None, None, "未找到可用风格"
+                return None, None, "未找到可用风格", False
         else:
             style_key = default_style
-
         print(f"DEBUG - 使用默认风格: {style_key}")
-    else:
-        # 将标签映射到实际的风格键名
-        style_key = map_style_label_to_key(style_label)
+
+    # 构建默认的caption
+    default_caption = ""
+    if theme == "ice":
+        default_caption = "在冰霜世界中，展现你的独特魅力"
+    elif theme == "fire":
+        default_caption = "在火焰中绽放，展现你的热情与力量"
 
     # 处理图像生成请求
-    return process_image_request(
+    output_image1, output_image2, status_msg = process_image_request(
         image=image,
         style_key=style_key,
-        additional_text=additional_text,
+        additional_text=default_caption,
         token_id=token_id
     )
+
+    # 如果成功生成，则显示风格选择
+    show_style = status_msg == "生成成功!" and len(token.used_image_hashes) > 0
+
+    # 缓存用户上传的图片
+    if output_image1 or output_image2:
+        upload_dir = os.path.join(STORAGE_DIR, "uploads", token_id)
+        os.makedirs(upload_dir, exist_ok=True)
+        upload_path = os.path.join(upload_dir, f"upload_{int(time.time())}.png")
+        # 如果是路径，直接复制
+        if isinstance(image, str) and os.path.exists(image):
+            import shutil
+            shutil.copy(image, upload_path)
+        # 如果是PIL图像，保存
+        elif hasattr(image, 'save'):
+            image.save(upload_path)
+
+    return output_image1, output_image2, status_msg, show_style
+
+
+def get_token_history(token_id: str) -> List[Dict]:
+    """
+    获取令牌的历史记录
+
+    Args:
+        token_id: 令牌ID
+
+    Returns:
+        历史记录列表
+    """
+    # 重新加载tokens配置
+    reload_tokens()
+
+    valid, _, token = auth_service.validate_token(token_id)
+    if not valid or token is None:
+        return []
+
+    history = []
+    for record in token.generation_records:
+        if record.get("output_files"):
+            for file_path in record["output_files"]:
+                if os.path.exists(file_path):
+                    history.append({
+                        "name": file_path,
+                        "type": "filepath",
+                        "data": file_path,
+                        "caption": f"风格: {record['style']}\n时间: {record['datetime']}"
+                    })
+
+    # 确保返回的列表符合Gallery要求的格式
+    if not history:
+        return []
+    return history
 
 
 # ===== 6. 创建Gradio界面 =====
@@ -417,14 +533,11 @@ with gr.Blocks(analytics_enabled=False) as demo:
                     type="filepath",
                     height=300
                 )
+                # 风格选择器（初始隐藏）
                 style_dropdown = gr.Dropdown(
                     label="选择风格",
-                    choices=[]
-                )
-                additional_text = gr.Textbox(
-                    label="补充提示词",
-                    placeholder="可选: 添加更多提示词...",
-                    lines=2
+                    choices=[],
+                    visible=False
                 )
                 with gr.Row():
                     usage_info = gr.Markdown("使用次数: 0/0")
@@ -441,6 +554,18 @@ with gr.Blocks(analytics_enabled=False) as demo:
 
                 result_message = gr.Markdown("")
 
+                # 添加历史图片展示
+                gr.Markdown("### 历史生成记录")
+                history_gallery = gr.Gallery(
+                    label="历史图片",
+                    show_label=True,
+                    elem_id="history_gallery",
+                    columns=2,
+                    rows=3,
+                    height=400,
+                    show_download_button=True
+                )
+
     # 过期界面
     with gr.Column(visible=False) as expired_container:
         gr.Markdown("# 访问已过期")
@@ -449,6 +574,9 @@ with gr.Blocks(analytics_enabled=False) as demo:
 
     def load_interface(request: gr.Request = None):
         """页面加载时的处理函数"""
+        # 重新加载tokens配置
+        reload_tokens()
+
         if request is None:
             return {
                 "view": "login",
@@ -536,6 +664,7 @@ with gr.Blocks(analytics_enabled=False) as demo:
             theme = token.theme
             stats = get_token_stats(current_token)
             style_options = get_available_styles_for_token(current_token, theme)
+            history_images = get_token_history(current_token)
 
             can_generate = stats["usage_valid"]
             generate_message = (
@@ -563,6 +692,9 @@ with gr.Blocks(analytics_enabled=False) as demo:
                 - 请继续使用相同的照片，**不能更换其他照片**
                 """
 
+            # 判断是否显示风格选择
+            show_style_dropdown = len(token.used_image_hashes) > 0
+
             return {
                 login_container: gr.update(visible=False),
                 main_container: gr.update(visible=True),
@@ -570,11 +702,12 @@ with gr.Blocks(analytics_enabled=False) as demo:
                 heading: f"# 哪吒形象生成 - {NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('name', theme)}",
                 subheading: NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('description', ''),
                 usage_instruction: instruction_text,
-                style_dropdown: gr.update(choices=[option["label"] for option in style_options]),
+                style_dropdown: gr.update(choices=[option["label"] for option in style_options], visible=show_style_dropdown),
                 usage_info: f"使用次数: {stats['usage_count']}/{stats['max_usage_count']} · 剩余: {stats['usage_remaining']}次",
                 valid_until: f"有效期至: {stats['access_valid_until']}",
                 generate_status: generate_message,
                 upload_btn: gr.update(interactive=can_generate),
+                history_gallery: history_images,
                 css: get_css_for_theme(theme)
             }
 
@@ -596,19 +729,39 @@ with gr.Blocks(analytics_enabled=False) as demo:
             login_container, main_container, expired_container,
             error_message, heading, subheading, usage_instruction, style_dropdown,
             usage_info, valid_until, generate_status, upload_btn,
-            expired_message, css
+            expired_message, history_gallery, css
         ]
     )
 
     # 设置生成按钮事件
-    def handle_image_with_state(image, style_label, additional_text, state):
+    def handle_image_with_state(image, style_label, state):
+        """
+        处理图片生成并更新UI状态
+        """
         token_id = state.get("token", "")
-        return handle_upload_image(image, style_label, additional_text, token_id)
+        output_image1, output_image2, status_msg, show_style = handle_upload_image(image, style_label, token_id)
+
+        # 获取更新后的历史图片
+        history_images = get_token_history(token_id)
+
+        # 更新页面状态以触发UI刷新
+        updated_state = state.copy()
+        updated_state["updated"] = time.time()  # 添加更新时间戳触发更新
+
+        # 返回结果并更新UI
+        return (
+            output_image1,
+            output_image2,
+            status_msg,
+            gr.update(visible=show_style),
+            history_images,
+            updated_state
+        )
 
     upload_btn.click(
         fn=handle_image_with_state,
-        inputs=[upload_image, style_dropdown, additional_text, page_state],
-        outputs=[output_image1, output_image2, result_message]
+        inputs=[upload_image, style_dropdown, page_state],
+        outputs=[output_image1, output_image2, result_message, style_dropdown, history_gallery, page_state]
     )
 
 # ===== 7. 启动应用 =====

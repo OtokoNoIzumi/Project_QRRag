@@ -223,65 +223,140 @@ def get_css_for_theme(theme: str) -> str:
     Returns:
         CSS样式字符串
     """
+    # 基础样式
+    base_css = """
+    body {
+        margin: 0;
+        padding: 0;
+        font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    }
+    .gradio-container {
+        margin: 0 auto;
+    }
+    .main-container {
+        padding: 20px;
+        border-radius: 10px;
+        margin: 10px;
+    }
+    h1, h2, h3 {
+        font-weight: 600;
+    }
+    .gradio-button {
+        padding: 10px 20px !important;
+        font-weight: 600 !important;
+        border-radius: 8px !important;
+        cursor: pointer !important;
+        transition: all 0.3s ease !important;
+        border: none !important;
+        margin: 10px 0 !important;
+    }
+    .gallery-item {
+        border-radius: 8px;
+        overflow: hidden;
+        box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+        margin: 10px;
+    }
+    .gradio-gallery {
+        margin-top: 20px;
+    }
+    """
+
+    # 主题特定样式
     if theme == "ice":
-        return """
+        theme_css = """
         body {
-            background: linear-gradient(135deg, #e0f7ff 0%, #c0e6ff 50%, #a0d5ff 100%);
-            color: #0a1b2a;
+            background: linear-gradient(135deg, #e8f4fc 0%, #d1e6f9 100%);
+            color: #2c3e50;
         }
-        .header {
-            background: rgba(168, 218, 255, 0.8);
-            border-bottom: 2px solid #7fb9ef;
+        .main-container {
+            background-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 5px 20px rgba(84, 165, 255, 0.2);
         }
-        .btn-primary {
-            background-color: #2b8bc8;
-            border-color: #1b6ca8;
+        h1, h2, h3 {
+            color: #3498db;
         }
-        .btn-primary:hover {
-            background-color: #1c7aba;
+        .gradio-button {
+            background-color: #3498db !important;
+            color: white !important;
         }
-        .card {
-            background: rgba(255, 255, 255, 0.85);
-            border: 1px solid #a0d5ff;
-            box-shadow: 0 4px 12px rgba(160, 213, 255, 0.3);
+        .gradio-button:hover {
+            background-color: #2980b9 !important;
+            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.3) !important;
         }
-        .footer {
-            background: rgba(168, 218, 255, 0.8);
-            color: #0a1b2a;
+        .gradio-button[disabled], .gradio-button.svelte-cmf5ev[disabled] {
+            background-color: #bdc3c7 !important;
+            cursor: not-allowed !important;
+        }
+        .gallery-item {
+            border: 2px solid #3498db;
+        }
+        .gradio-dropdown {
+            border: 2px solid #3498db !important;
         }
         """
     elif theme == "fire":
-        return """
+        theme_css = """
         body {
-            background: linear-gradient(135deg, #fff0e0 0%, #ffd0a0 50%, #ffb060 100%);
-            color: #2a140a;
+            background: linear-gradient(135deg, #fff4e8 0%, #ffedd1 100%);
+            color: #7f4330;
         }
-        .header {
-            background: rgba(255, 200, 150, 0.8);
-            border-bottom: 2px solid #ef9f7f;
+        .main-container {
+            background-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 5px 20px rgba(255, 165, 84, 0.2);
         }
-        .btn-primary {
-            background-color: #c86a2b;
-            border-color: #a8581b;
+        h1, h2, h3 {
+            color: #e74c3c;
         }
-        .btn-primary:hover {
-            background-color: #ba5c1c;
+        .gradio-button {
+            background-color: #e74c3c !important;
+            color: white !important;
         }
-        .card {
-            background: rgba(255, 255, 255, 0.85);
-            border: 1px solid #ffc080;
-            box-shadow: 0 4px 12px rgba(255, 192, 128, 0.3);
+        .gradio-button:hover {
+            background-color: #c0392b !important;
+            box-shadow: 0 5px 15px rgba(231, 76, 60, 0.3) !important;
         }
-        .footer {
-            background: rgba(255, 200, 150, 0.8);
-            color: #2a140a;
+        .gradio-button[disabled], .gradio-button.svelte-cmf5ev[disabled] {
+            background-color: #bdc3c7 !important;
+            cursor: not-allowed !important;
+        }
+        .gallery-item {
+            border: 2px solid #e74c3c;
+        }
+        .gradio-dropdown {
+            border: 2px solid #e74c3c !important;
         }
         """
     else:
-        # 默认样式
-        return """
+        theme_css = """
         body {
-            background: #f0f0f0;
-            color: #333;
+            background: linear-gradient(135deg, #f5f7fa 0%, #e4e8eb 100%);
+            color: #34495e;
+        }
+        .main-container {
+            background-color: rgba(255, 255, 255, 0.8);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.1);
+        }
+        h1, h2, h3 {
+            color: #2ecc71;
+        }
+        .gradio-button {
+            background-color: #2ecc71 !important;
+            color: white !important;
+        }
+        .gradio-button:hover {
+            background-color: #27ae60 !important;
+            box-shadow: 0 5px 15px rgba(46, 204, 113, 0.3) !important;
+        }
+        .gradio-button[disabled], .gradio-button.svelte-cmf5ev[disabled] {
+            background-color: #bdc3c7 !important;
+            cursor: not-allowed !important;
+        }
+        .gallery-item {
+            border: 2px solid #2ecc71;
+        }
+        .gradio-dropdown {
+            border: 2px solid #2ecc71 !important;
         }
         """
+
+    return f"<style>{base_css}{theme_css}</style>"

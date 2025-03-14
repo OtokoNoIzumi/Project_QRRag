@@ -75,5 +75,6 @@
     "tokens_file": "tokens.json",
     "assets_dir": "assets",
     "cache_dir": "cache"
-  }
+  },
+  "base_url": "https://4a83f9f84c39e072ed.gradio.live"
 }
