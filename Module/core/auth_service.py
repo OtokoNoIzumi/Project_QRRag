@@ -157,8 +157,7 @@ class AuthService:
         if not token.is_usage_valid:
             if token.usage_count >= token.max_usage_count:
                 return False, "已达到最大使用次数", token
-            else:
-                return False, "使用期已过期", token
+            return False, "使用期已过期", token
 
         return True, None, token
 
@@ -183,14 +182,14 @@ class AuthService:
             if image_hash in token.used_image_hashes:
                 # 如果是同一张图片，允许继续使用
                 return True, None
-            else:
-                # 如果是不同图片，拒绝使用
-                return False, "此令牌已用于其他图片，不能使用新图片"
+            # 如果是不同图片，拒绝使用
+            return False, "此令牌已用于其他图片，不能使用新图片"
 
         # 如果令牌尚未使用过任何图片，允许使用
         return True, None
 
-    def record_image_usage(self, token_id: str, image_hash: str, style: str, output_images: List[str]) -> bool:
+    def record_image_usage(
+            self, token_id: str, image_hash: str, style: str, output_images: List[str]) -> bool:
         """
         记录图像使用
 

@@ -7,10 +7,9 @@ import os
 import sys
 import json
 import time
-from typing import Dict, Optional, Tuple, List, Any
-import gradio as gr
-from urllib.parse import urlparse, parse_qs
+from typing import Dict, Optional, Tuple, List
 import re
+import gradio as gr
 
 # ===== 1. 获取项目路径 =====
 if "__file__" in globals():
@@ -25,8 +24,6 @@ sys.path.append(root_dir)
 from Module.core.auth_service import AuthService
 from Module.core.image_service import ImageService, calculate_image_hash
 from Module.core.utils import (
-    load_config,
-    save_config,
     extract_token_from_url,
     format_time_remaining,
     create_sample_tokens_file,
@@ -35,11 +32,8 @@ from Module.core.utils import (
 # 导入原始的WhiskService
 from Module.Common.scripts.llm.utils.google_whisk import (
     DEFAULT_STYLE_PROMPT_DICT,
-    AspectRatio
 )
 from app_image import WhiskService
-# 导入Caption服务
-from Module.core.caption_service import CaptionService
 
 # ===== 3. 初始化配置 =====
 # 加载配置
@@ -81,8 +75,6 @@ auth_service = AuthService(TOKENS_FILE)
 # 初始化图像服务
 image_service = ImageService(whisk_service, CACHE_DIR, NEZHA_CONFIG)
 
-# 初始化Caption服务
-caption_service = CaptionService(STORAGE_DIR)
 
 # 添加一个函数用于重新加载tokens
 def reload_tokens():
@@ -102,6 +94,7 @@ def reload_tokens():
             auth_service.last_token_load = last_modified
             return True
     return False
+
 
 # ===== 5. 定义处理函数 =====
 def validate_url_token(request: gr.Request) -> Tuple[bool, Optional[str], Optional[Dict]]:
@@ -571,7 +564,6 @@ with gr.Blocks(analytics_enabled=False) as demo:
         gr.Markdown("# 访问已过期")
         expired_message = gr.Markdown("您的访问令牌已过期")
 
-
     def load_interface(request: gr.Request = None):
         """页面加载时的处理函数"""
         # 重新加载tokens配置
@@ -621,7 +613,6 @@ with gr.Blocks(analytics_enabled=False) as demo:
             return {"view": "expired", "error": "", "token": current_token}
 
         return {"view": "main", "error": "", "token": current_token}
-
 
     def update_ui(state):
         """根据页面状态更新UI"""
@@ -713,7 +704,6 @@ with gr.Blocks(analytics_enabled=False) as demo:
 
         return update_ui({"view": "login", "error": "未知状态"})
 
-
     # 页面加载事件
     demo.load(
         fn=load_interface,
@@ -772,7 +762,7 @@ if __name__ == "__main__":
 
     # 启动前的准备
     print(f"\n===== 哪吒形象生成系统 v{NEZHA_CONFIG.get('project_settings', {}).get('version', '1.0.0')} =====")
-    print(f"配置信息:")
+    print("配置信息:")
     print(f"  - 服务地址: {CONFIG['name']}:{CONFIG['port']}")
     print(f"  - 缓存目录: {CACHE_DIR}")
     print(f"  - 存储目录: {STORAGE_DIR}")

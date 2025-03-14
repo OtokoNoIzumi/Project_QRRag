@@ -1,7 +1,6 @@
 # 核心依赖
 Pillow
-gradio>=3.50.0
-jinja2
+gradio
 
 # 数据处理
 numpy

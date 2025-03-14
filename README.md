@@ -78,7 +78,6 @@
 - `Module/core/`: 核心功能模块
   - `auth_service.py`: 认证和令牌管理
   - `image_service.py`: 图像处理服务
-  - `caption_service.py`: 描述文字服务
   - `admin_service.py`: 管理员功能
   - `utils.py`: 工具函数
 

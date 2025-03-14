@@ -5,16 +5,11 @@ import os
 import base64
 import hashlib
 import time
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional, Tuple
 from datetime import datetime
-import io
-from PIL import Image
 
 from ..Common.scripts.llm.utils.google_whisk import (
     generate_image_base64,
-    generate_caption,
-    generate_story_board,
-    generate_image_fx,
     DEFAULT_STYLE_PROMPT_DICT,
     AspectRatio
 )

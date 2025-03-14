@@ -4,10 +4,10 @@
 import os
 import json
 import time
-import qrcode
 from datetime import datetime, timedelta
-from typing import List, Dict, Optional
+from typing import List, Optional
 from dataclasses import dataclass
+import qrcode
 from PIL import Image, ImageDraw, ImageFont
 
 
