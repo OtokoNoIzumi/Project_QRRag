@@ -1,0 +1,79 @@
+{
+  "themes": {
+    "ice": {
+      "name": "冰之幻境",
+      "description": "在冰雪之境中展现你的个性",
+      "location_prompt": "冰雪世界，晶莹剔透的冰宫殿，寒冷而美丽的雪景",
+      "pose_prompt": "优雅，冷静，自信",
+      "style_prompts": {
+        "水晶风格": "crystal style, ice crystal, transparent, shiny, ethereal, reflective surface",
+        "冰霜魔法": "ice magic, snowflake particles, frost effect, magical, enchanted, mystical aura",
+        "北欧神话": "Norse mythology, Viking aesthetic, runes, ancient winter gods, ethereal beauty",
+        "童话冰雪": "winter fairy tale, snow queen, magical ice kingdom, fantasy, dreamy landscape",
+        "现代冰雕": "modern ice sculpture, minimalist ice architecture, geometric ice forms, blue tint",
+        "极光幻境": "aurora borealis, northern lights, magical night sky, ethereal glow, dreamlike",
+        "雪山探险": "snow mountain adventure, alpine landscape, crisp winter air, vast snow peaks"
+      },
+      "default_style": "水晶风格",
+      "ui": {
+        "logo": "ice_logo.png",
+        "background": "ice_background.jpg",
+        "effects": {
+          "entry": "ice_entry.css",
+          "generate": "ice_generate.css"
+        }
+      }
+    },
+    "fire": {
+      "name": "火之领域",
+      "description": "在火焰的世界中展现你的力量",
+      "location_prompt": "火山世界，熔岩城堡，炙热而壮丽的焰景",
+      "pose_prompt": "热情，有力，动感",
+      "style_prompts": {
+        "熔岩风格": "lava style, molten rock, glowing embers, heat waves, fiery aesthetic",
+        "烈焰魔法": "fire magic, flame particles, burning effect, magical, enchanted, mystical aura",
+        "东方朱雀": "oriental vermilion bird, phoenix, ancient fire deity, chinese mythological creature",
+        "神话火神": "fire deity, mythological fire god, ancient flame spirits, godly power",
+        "现代炼金": "modern alchemy, fire laboratory, scientific mysticism, controlled flames",
+        "火焰艺术": "fire art, flame painting, artistic fire patterns, creative heat imagery",
+        "火山探险": "volcano adventure, lava landscape, heat rising, dramatic fire scenery"
+      },
+      "default_style": "熔岩风格",
+      "ui": {
+        "logo": "fire_logo.png",
+        "background": "fire_background.jpg",
+        "effects": {
+          "entry": "fire_entry.css",
+          "generate": "fire_generate.css"
+        }
+      }
+    }
+  },
+  "project_settings": {
+    "name": "哪吒形象生成",
+    "version": "1.0.0",
+    "description": "基于QR码授权的个性化图片生成服务",
+    "max_styles_per_token": 3,
+    "landing_page": {
+      "logo": "nezha_logo.png",
+      "background": "landing_background.jpg",
+      "title": "哪吒形象生成",
+      "subtitle": "扫描二维码，创造专属于你的个性形象",
+      "footer": "© 2024 哪吒形象生成项目组"
+    }
+  },
+  "image_generation": {
+    "default_image_number": 2,
+    "aspect_ratio": "LANDSCAPE"
+  },
+  "server": {
+    "name": "0.0.0.0",
+    "port": 7860,
+    "ssl_verify": false
+  },
+  "storage": {
+    "tokens_file": "tokens.json",
+    "assets_dir": "assets",
+    "cache_dir": "cache"
+  }
+}

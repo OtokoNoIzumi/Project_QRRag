@@ -1,15 +1,21 @@
 # 核心依赖
 Pillow
-gradio
+gradio>=3.50.0
 jinja2
 
 # 数据处理
 numpy
 
-# 开发工具（可选）
+# 开发工具
 python-dotenv
+requests
 
-# Common
+# API服务
 tiktoken
 openai
+
+# UI
+matplotlib
+
+# 其他
 solara

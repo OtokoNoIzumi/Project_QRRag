@@ -1,11 +1,11 @@
 import os
-import sys
 import hashlib
 import sqlite3
 import json
 import time
 import threading
-from typing import Dict, Optional
+from typing import Dict
+
 
 # 处理路径问题
 def get_project_paths():
@@ -24,6 +24,7 @@ def get_project_paths():
     schema_dir = os.path.join(project_root, "schema")
 
     return project_root, module_dir, cache_dir, schema_dir
+
 
 # 获取路径
 PROJECT_ROOT, MODULE_DIR, CACHE_DIR, SCHEMA_DIR = get_project_paths()
@@ -400,7 +401,7 @@ class WhiskCache(WhiskCacheSQLite):
         """保持兼容原始API，但实际不再使用"""
         # 该方法保留仅用于向后兼容，不实际保存任何文件
         # 所有数据由SQLite自动保存
-        pass
+        # pass
 
 
 # 用于一次性迁移的辅助函数
