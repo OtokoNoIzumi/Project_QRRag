@@ -19,4 +19,4 @@ auth_config.*
 # QRcode
 Module/style/nezha/storage/posters
 Module/style/nezha/storage/qrcodes
-Module/style/nezha/storage/uploads
+Module/style/nezha/storage/results

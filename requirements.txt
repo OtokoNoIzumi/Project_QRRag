@@ -12,6 +12,10 @@ requests
 # API服务
 tiktoken
 openai
+fastapi
+uvicorn
+python-multipart
+pydantic
 
 # UI
 matplotlib

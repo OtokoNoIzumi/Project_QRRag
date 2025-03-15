@@ -4,6 +4,7 @@
 import os
 import json
 import time
+import random
 from typing import Dict, Optional, Tuple, List
 from dataclasses import dataclass
 from datetime import datetime
@@ -22,6 +23,8 @@ class AccessToken:
     used_image_hashes: List[str]  # 已使用的图片哈希列表
     used_styles: List[str]  # 已使用的风格列表
     generation_records: List[Dict]  # 生成记录列表
+    theme_prize_box_name: str  # 主题奖池名称
+    actived: bool  #    是否初始化主题
 
     @property
     def is_usage_valid(self) -> bool:
@@ -38,7 +41,7 @@ class AccessToken:
     def can_use_more_styles(self) -> bool:
         """检查是否可以使用更多的风格"""
         # 令牌可以对同一张图片使用多种风格，最多3种不同风格
-        return len(self.used_styles) < 3
+        return len(self.used_styles) < 10
 
     def has_used_image(self, image_hash: str) -> bool:
         """检查是否已使用过该图片"""
@@ -63,7 +66,7 @@ class AccessToken:
 class AuthService:
     """认证服务类"""
 
-    def __init__(self, tokens_file_path: str):
+    def __init__(self, tokens_file_path: str, config_file_path: str):
         """
         初始化认证服务
 
@@ -72,7 +75,23 @@ class AuthService:
         """
         self.tokens_file_path = tokens_file_path
         self.tokens: Dict[str, AccessToken] = {}
+        self.config_file_path = config_file_path
+        self.config = {}
+        self.prize_boxes = {}
+        self._load_config()
         self._load_tokens()
+
+    def _load_config(self) -> None:
+        """从文件加载配置"""
+        if os.path.exists(self.config_file_path):
+            with open(self.config_file_path, 'r', encoding='utf-8') as f:
+                self.config = json.load(f)
+            self.prize_boxes = self.config.get("prize_system", {})
+
+    def _save_config(self) -> None:
+        """保存配置到文件"""
+        with open(self.config_file_path, 'w', encoding='utf-8') as f:
+            json.dump(self.config, f, ensure_ascii=False, indent=2)
 
     def _load_tokens(self) -> None:
         """从文件加载令牌"""
@@ -84,7 +103,7 @@ class AuthService:
                 for token_id, token_data in data.items():
                     self.tokens[token_id] = AccessToken(
                         token_id=token_id,
-                        theme=token_data.get('theme', 'ice'),
+                        theme=token_data.get('theme', ''),
                         usage_count=token_data.get('usage_count', 0),
                         max_usage_count=token_data.get('max_usage_count', 3),
                         created_at=token_data.get('created_at', time.time()),
@@ -92,7 +111,9 @@ class AuthService:
                         access_valid_until=token_data.get('access_valid_until', time.time() + 604800),
                         used_image_hashes=token_data.get('used_image_hashes', []),
                         used_styles=token_data.get('used_styles', []),
-                        generation_records=token_data.get('generation_records', [])
+                        generation_records=token_data.get('generation_records', []),
+                        theme_prize_box_name=token_data.get('theme_prize_box_name', ''),
+                        actived=token_data.get('actived', False)
                     )
             except (json.JSONDecodeError, IOError) as e:
                 print(f"加载令牌文件出错: {str(e)}")
@@ -111,7 +132,9 @@ class AuthService:
                     'access_valid_until': token.access_valid_until,
                     'used_image_hashes': token.used_image_hashes,
                     'used_styles': token.used_styles,
-                    'generation_records': token.generation_records
+                    'generation_records': token.generation_records,
+                    'theme_prize_box_name': token.theme_prize_box_name,
+                    'actived': token.actived
                 }
 
             os.makedirs(os.path.dirname(self.tokens_file_path), exist_ok=True)
@@ -295,5 +318,70 @@ class AuthService:
             "is_access_valid": token.is_access_valid,
             "used_styles": token.used_styles,
             "can_use_more_styles": token.can_use_more_styles,
-            "generation_records": token.generation_records
+            "generation_records": token.generation_records,
+            "theme_prize_box_name": token.theme_prize_box_name,
+            "actived": token.actived
         }
+
+    def initialize_token(self, token_id: str) -> Tuple[bool, str, Optional[str]]:
+        """
+        初始化令牌并决定其主题类型
+
+        Args:
+            token_id: 令牌ID
+
+        Returns:
+            元组: (成功标志, 消息, 分配的主题)
+        """
+        # 检查令牌是否存在
+        if token_id not in self.tokens:
+            return False, f"令牌 {token_id} 不存在", None
+
+        token = self.tokens[token_id]
+
+        # 已初始化过的令牌直接返回
+        if token.theme:
+            return True, f"令牌 {token_id} 已初始化为: {token.theme}", token.theme
+
+        # 确定令牌基础类型 (哪吒或敖丙)
+        is_nezha = token_id.startswith("fire") or (len(token_id) > 0 and token_id[-1].isdigit() and int(token_id[-1]) % 2 == 0)
+        box_type = "nezha" if is_nezha else "aobing"
+
+        # 获取奖池信息
+        prize_box = self.prize_boxes.get(box_type, {
+            "total": 0,
+            "prize_count": 0,
+            "assigned": 0,
+            "tokens": [],
+            "spicial_theme": box_type + "-awakened",
+            "normal_theme": box_type
+        })
+
+        # 进行抽奖逻辑
+        if prize_box["assigned"] < prize_box["prize_count"]:
+            # 计算剩余奖品数和剩余总数
+            remaining_prizes = prize_box["prize_count"] - prize_box["assigned"]
+            remaining_total = prize_box["total"] - len(prize_box["tokens"])
+
+            # 只有当剩余总数大于0时才进行抽奖
+            if remaining_total > 0:
+                # 随机抽奖，看是否中奖
+                is_winner = random.random() < (remaining_prizes / remaining_total)
+
+                if is_winner:
+                    # 中奖，分配特殊主题
+                    prize_box["assigned"] += 1
+                    special_theme = prize_box["spicial_theme"]
+                    token.theme = special_theme
+                    prize_box["tokens"].append(token_id)
+                    self._save_tokens()
+                    self._save_config()
+                    return True, f"恭喜！令牌 {token_id} 获得特殊版本：{special_theme}", special_theme
+
+        # 未中奖或奖池已空，分配普通主题
+        normal_theme = prize_box["normal_theme"]
+        token.theme = normal_theme
+        prize_box["tokens"].append(token_id)
+        self._save_tokens()
+        self._save_config()
+        return True, f"令牌 {token_id} 初始化为标准版本：{normal_theme}", normal_theme

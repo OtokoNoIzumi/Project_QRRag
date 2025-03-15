@@ -56,7 +56,7 @@ class ImageService:
         self.whisk_service = whisk_service
         self.cache_dir = cache_dir
         self.config = nezha_config
-        self.image_cache_dir = os.path.join(cache_dir, "image")
+        self.image_cache_dir = os.path.join(cache_dir, "results")
 
         # 确保缓存目录存在
         os.makedirs(self.image_cache_dir, exist_ok=True)
@@ -106,13 +106,32 @@ class ImageService:
         theme_config = self.config.get("themes", {}).get(theme, {})
         return theme_config.get("pose_prompt", "")
 
+    def get_theme_caption_prompt(self, theme: str) -> str:
+        """
+        获取主题对应的图片描述提示词
+
+        Args:
+            theme: 主题名称
+        """
+        theme_config = self.config.get("themes", {}).get(theme, {})
+        return theme_config.get("caption_prompt", "")
+
+    def get_theme_extra_prompt(self, theme: str) -> str:
+        """
+        获取主题对应的额外提示词
+
+        Args:
+            theme: 主题名称
+        """
+        theme_config = self.config.get("themes", {}).get(theme, {})
+        return theme_config.get("extra_prompt", "")
+
     def process_image(
         self,
         image_path: str,
         token_id: str,
         theme: str,
-        style_key: str,
-        additional_text: str = ""
+        style_key: str
     ) -> Tuple[Optional[str], Optional[str], Dict]:
         """
         处理图像生成
@@ -132,55 +151,61 @@ class ImageService:
             "token_id": token_id,
             "theme": theme,
             "style_key": style_key,
-            "additional_text": additional_text,
             "timestamp": time.time(),
             "datetime": datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             "success": False,
             "error_message": None
         }
+        # 确保缓存目录存在
+        cache_dir = os.path.join(self.image_cache_dir, token_id)
+        os.makedirs(cache_dir, exist_ok=True)
 
         try:
             # 生成输出前缀
             current_date = datetime.now().strftime("%Y%m%d")
-            counter = len([f for f in os.listdir(self.image_cache_dir)
-                          if f.startswith(f"nezha_{token_id}_{current_date}")]) + 1
+            counter = len([f for f in os.listdir(cache_dir)
+                          if f.startswith(f"{token_id}_{current_date}")]) + 1
             output_prefix = os.path.join(
-                self.image_cache_dir,
-                f"nezha_{token_id}_{current_date}_take{counter}"
+                cache_dir,
+                f"{token_id}_{current_date}_take{counter}"
             )
 
             # 准备图片数据
-            base64_str = generate_image_base64(image_path)
-            image_hash = calculate_image_hash(base64_str)
-            process_data["image_hash"] = image_hash
+            # base64_str = generate_image_base64(image_path)
 
             # 生成图片描述
-            caption = self.whisk_service.generate_caption_wrapped(base64_str)
+            image_data = self.whisk_service._prepare_image_data(image_path)
+            base64_str = image_data[0][0]
+            image_hash = calculate_image_hash(base64_str)
+            process_data["image_hash"] = image_hash
+            caption = self.whisk_service._process_captions(image_data)
             if not caption:
                 process_data["error_message"] = "生成图片描述失败"
                 return None, None, process_data
 
-            process_data["caption"] = caption
+            process_data["caption"] = caption[0]
 
             # 获取主题特定配置
             style_prompts = self.get_theme_style_prompts(theme)
             style_prompt = style_prompts.get(style_key, "")
             location_prompt = self.get_theme_location_prompt(theme)
             pose_prompt = self.get_theme_pose_prompt(theme)
-
+            caption_prompt = self.get_theme_caption_prompt(theme)
+            extra_prompt = self.get_theme_extra_prompt(theme)
             # 生成故事板提示词
+
             final_prompt = self.whisk_service.generate_story_board_wrapped(
-                characters=[caption],
+                characters=[caption[0], caption_prompt],
                 style_prompt=style_prompt,
                 location_prompt=location_prompt,
                 pose_prompt=pose_prompt,
-                additional_input=additional_text
+                additional_input=extra_prompt
             )
 
             if not final_prompt:
                 process_data["error_message"] = "生成故事板提示词失败"
                 return None, None, process_data
-
+            print('\n',final_prompt)
             process_data["final_prompt"] = final_prompt
 
             # 生成最终图片
@@ -191,7 +216,8 @@ class ImageService:
                 prompt=final_prompt,
                 output_prefix=output_prefix,
                 image_number=image_number,
-                aspect_ratio=aspect_ratio
+                aspect_ratio=aspect_ratio,
+                save_local=True
             )
 
             if not image_files:

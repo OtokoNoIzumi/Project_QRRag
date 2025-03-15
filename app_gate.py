@@ -42,7 +42,8 @@ with open(CONFIG_PATH, 'r', encoding='utf-8') as config_file:
     CONFIG = json.load(config_file)
 
 # 加载哪吒项目配置
-NEZHA_CONFIG_PATH = os.path.join(root_dir, "Module", "style", "nezha", "config.json")
+STYLE_PATH = os.path.join(root_dir, "Module", "style")
+NEZHA_CONFIG_PATH = os.path.join(STYLE_PATH, "nezha", "config.json")
 with open(NEZHA_CONFIG_PATH, 'r', encoding='utf-8') as config_file:
     NEZHA_CONFIG = json.load(config_file)
 
@@ -52,7 +53,7 @@ CONFIG.update(NEZHA_CONFIG.get("server", {}))
 # 设置缓存和存储路径
 CACHE_DIR = os.path.join(current_dir, CONFIG["cache"]["dir"])
 IMAGE_CACHE_DIR = os.path.join(CACHE_DIR, CONFIG["cache"]["image_dir"])
-STORAGE_DIR = os.path.join(root_dir, "Module", "style", "nezha", "storage")
+STORAGE_DIR = os.path.join(STYLE_PATH, "nezha", "storage")
 TOKENS_FILE = os.path.join(STORAGE_DIR, NEZHA_CONFIG.get("storage", {}).get("tokens_file", "tokens.json"))
 
 # 确保目录存在
@@ -70,10 +71,10 @@ if not os.path.exists(TOKENS_FILE):
 whisk_service = WhiskService()
 
 # 初始化认证服务
-auth_service = AuthService(TOKENS_FILE)
+auth_service = AuthService(TOKENS_FILE, NEZHA_CONFIG_PATH)
 
 # 初始化图像服务
-image_service = ImageService(whisk_service, CACHE_DIR, NEZHA_CONFIG)
+image_service = ImageService(whisk_service, STORAGE_DIR, NEZHA_CONFIG)
 
 
 # 添加一个函数用于重新加载tokens
@@ -90,7 +91,7 @@ def reload_tokens():
         if not hasattr(auth_service, 'last_token_load') or last_modified > auth_service.last_token_load:
             print(f"发现tokens文件已更新，重新加载: {TOKENS_FILE}")
             # 重新初始化认证服务
-            auth_service = AuthService(TOKENS_FILE)
+            auth_service = AuthService(TOKENS_FILE, NEZHA_CONFIG_PATH)
             auth_service.last_token_load = last_modified
             return True
     return False
@@ -151,7 +152,6 @@ def validate_url_token(request: gr.Request) -> Tuple[bool, Optional[str], Option
 def process_image_request(
     image,
     style_key: str,
-    additional_text: str,
     token_id: str
 ) -> Tuple[Optional[str], Optional[str], str]:
     """
@@ -160,7 +160,6 @@ def process_image_request(
     Args:
         image: 上传的图像
         style_key: 选择的风格
-        additional_text: 附加提示词
         token_id: 令牌ID
 
     Returns:
@@ -192,7 +191,6 @@ def process_image_request(
         token_id=token_id,
         theme=token.theme,
         style_key=style_key,
-        additional_text=additional_text
     )
 
     # 检查是否成功
@@ -201,6 +199,7 @@ def process_image_request(
 
     # 确保输出图像是字符串路径
     output_paths = []
+    # 保存的问题要看看，应该有
     for img in [output_image1, output_image2]:
         if img is not None:
             if hasattr(img, 'filename') and img.filename:
@@ -268,7 +267,10 @@ def get_available_styles_for_token(token_id: str, theme: str) -> List[Dict]:
         disabled = False
 
         if status is True:
-            label = f"{style} (已使用)"
+            if can_use_more:
+                label = f"{style} (已使用)"
+            else:
+                label = f"{style} (可使用)"
         elif status is False or not can_use_more:
             label = f"{style} (不可用)"
             disabled = True
@@ -346,7 +348,7 @@ def map_style_label_to_key(style_label: str) -> str:
         样式键名
     """
     # 移除状态后缀
-    for suffix in [" (已使用)", " (不可用)"]:
+    for suffix in [" (已使用)", " (不可用)", " (可使用)", " (已达风格限制)"]:
         if style_label.endswith(suffix):
             return style_label[:-len(suffix)]
     return style_label
@@ -415,39 +417,32 @@ def handle_upload_image(
             style_key = default_style
         print(f"DEBUG - 使用默认风格: {style_key}")
 
-    # 构建默认的caption
-    default_caption = ""
-    if theme == "ice":
-        default_caption = "在冰霜世界中，展现你的独特魅力"
-    elif theme == "fire":
-        default_caption = "在火焰中绽放，展现你的热情与力量"
-
     # 处理图像生成请求
     output_image1, output_image2, status_msg = process_image_request(
         image=image,
         style_key=style_key,
-        additional_text=default_caption,
         token_id=token_id
     )
 
     # 如果成功生成，则显示风格选择
     show_style = status_msg == "生成成功!" and len(token.used_image_hashes) > 0
-
     # 缓存用户上传的图片
-    if output_image1 or output_image2:
-        upload_dir = os.path.join(STORAGE_DIR, "uploads", token_id)
-        os.makedirs(upload_dir, exist_ok=True)
-        upload_path = os.path.join(upload_dir, f"upload_{int(time.time())}.png")
-        # 如果是路径，直接复制
-        if isinstance(image, str) and os.path.exists(image):
-            import shutil
-            shutil.copy(image, upload_path)
-        # 如果是PIL图像，保存
-        elif hasattr(image, 'save'):
-            image.save(upload_path)
+    if (output_image1 or output_image2):
+        upload_dir = os.path.join(STORAGE_DIR, "results", token_id)
+        upload_path = os.path.join(upload_dir, "upload.png")
+
+        # 如果已经缓存过，则不再重复缓存
+        if not os.path.exists(upload_path):
+            os.makedirs(upload_dir, exist_ok=True)
+            # 如果是路径，直接复制
+            if isinstance(image, str) and os.path.exists(image):
+                import shutil
+                shutil.copy(image, upload_path)
+            # 如果是PIL图像，保存
+            elif hasattr(image, 'save'):
+                image.save(upload_path)
 
     return output_image1, output_image2, status_msg, show_style
-
 
 def get_token_history(token_id: str) -> List[Dict]:
     """
@@ -471,17 +466,12 @@ def get_token_history(token_id: str) -> List[Dict]:
         if record.get("output_files"):
             for file_path in record["output_files"]:
                 if os.path.exists(file_path):
-                    history.append({
-                        "name": file_path,
-                        "type": "filepath",
-                        "data": file_path,
-                        "caption": f"风格: {record['style']}\n时间: {record['datetime']}"
-                    })
+                    history.append((file_path, f"风格: {record['style']}"))
 
-    # 确保返回的列表符合Gallery要求的格式
+    # 确保返回的列表符合Gallery要求的格式，并按倒序排列
     if not history:
         return []
-    return history
+    return history[::-1]
 
 
 # ===== 6. 创建Gradio界面 =====
@@ -551,11 +541,11 @@ with gr.Blocks(analytics_enabled=False) as demo:
                 gr.Markdown("### 历史生成记录")
                 history_gallery = gr.Gallery(
                     label="历史图片",
-                    show_label=True,
+                    show_label=False,
                     elem_id="history_gallery",
                     columns=2,
-                    rows=3,
-                    height=400,
+                    # rows=3,
+                    # height=400,
                     show_download_button=True
                 )
 
@@ -656,7 +646,6 @@ with gr.Blocks(analytics_enabled=False) as demo:
             stats = get_token_stats(current_token)
             style_options = get_available_styles_for_token(current_token, theme)
             history_images = get_token_history(current_token)
-
             can_generate = stats["usage_valid"]
             generate_message = (
                 "可以生成图片" if can_generate else
@@ -690,7 +679,7 @@ with gr.Blocks(analytics_enabled=False) as demo:
                 login_container: gr.update(visible=False),
                 main_container: gr.update(visible=True),
                 expired_container: gr.update(visible=False),
-                heading: f"# 哪吒形象生成 - {NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('name', theme)}",
+                heading: f"# {NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('name', theme)}",
                 subheading: NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('description', ''),
                 usage_instruction: instruction_text,
                 style_dropdown: gr.update(choices=[option["label"] for option in style_options], visible=show_style_dropdown),
@@ -730,7 +719,6 @@ with gr.Blocks(analytics_enabled=False) as demo:
         """
         token_id = state.get("token", "")
         output_image1, output_image2, status_msg, show_style = handle_upload_image(image, style_label, token_id)
-
         # 获取更新后的历史图片
         history_images = get_token_history(token_id)
 
@@ -777,7 +765,7 @@ if __name__ == "__main__":
             server_port=CONFIG["port"],
             ssl_verify=CONFIG.get("ssl_verify", False),
             share=share_setting,
-            allowed_paths=[IMAGE_CACHE_DIR, STORAGE_DIR],
+            allowed_paths=[IMAGE_CACHE_DIR, STORAGE_DIR, CACHE_DIR, STYLE_PATH],
             show_error=True
         )
     except Exception as e:
