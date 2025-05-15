@@ -134,13 +134,13 @@ def validate_url_token(request: gr.Request) -> Tuple[bool, Optional[str], Option
                     print(f"DEBUG - 使用工具函数提取token: {token_id}")
                 else:
                     print("DEBUG - 未找到token")
-                    return False, "无效的访问令牌，请扫描二维码访问", None
+                    return False, "无效的专属通行证，请使用正确的链接访问，或扫描专属通行证二维码", None
     except Exception as e:
         print(f"DEBUG - 参数解析错误: {str(e)}")
-        return False, f"无效的访问令牌，请扫描二维码访问 (错误: {str(e)})", None
+        return False, f"无效的专属通行证，请使用正确的链接访问，或扫描专属通行证二维码", None
 
     if not token_id:
-        return False, "无效的访问令牌，请扫描二维码访问", None
+        return False, "无效的专属通行证，请使用正确的链接访问，或扫描专属通行证二维码", None
 
     is_valid, error_msg, token = auth_service.validate_token(token_id)
     if not is_valid:
@@ -167,15 +167,15 @@ def process_image_request(
     """
     print(f"DEBUG - 处理图像请求: token={token_id}, style={style_key}")
     if not token_id:
-        return None, None, "无效的访问令牌"
+        return None, None, "无效的专属通行证"
 
     if not image:
-        return None, None, "请先上传图片"
+        return None, None, "请先上传图片，再开始创作"
 
     # 检查令牌是否可以生成图片
     can_generate, error_msg, token = auth_service.can_generate_image(token_id)
     if not can_generate:
-        return None, None, f"无法生成图片: {error_msg}"
+        return None, None, f"无法创作图片: {error_msg}"
 
     # 计算图像哈希
     image_hash = calculate_image_hash(image)
@@ -219,7 +219,7 @@ def process_image_request(
         output_images=[p for p in output_paths if p is not None]
     )
 
-    return output_image1, output_image2, "生成成功!"
+    return output_image1, output_image2, "创作成功!"
 
 
 def get_available_styles_for_token(token_id: str, theme: str) -> List[Dict]:
@@ -376,15 +376,15 @@ def handle_upload_image(
     print(f"DEBUG - 上传图像: style_label={style_label}, token_id={token_id}")
 
     if not image:
-        return None, None, "请先上传图片", False
+        return None, None, "请先上传照片，再开始创作", False
 
     if not token_id or token_id.strip() == "":
-        return None, None, "无效的访问令牌", False
+        return None, None, "无效的专属通行证", False
 
     # 获取令牌信息
     _, _, token = auth_service.validate_token(token_id)
     if token is None:
-        return None, None, "无效的访问令牌", False
+        return None, None, "无效的专属通行证", False
 
     # 计算图像哈希检查令牌是否已使用过其他图片
     image_hash = calculate_image_hash(image)
@@ -402,7 +402,7 @@ def handle_upload_image(
 
         # 验证风格是否可用
         if style_key not in token.used_styles and not token.can_use_more_styles:
-            return None, None, "您已达到风格使用上限", True
+            return None, None, "您已达到风格创作上限，最多可创作3种不同风格", True
     else:
         # 如果没有选择风格或风格为空，使用默认风格
         default_style = theme_config.get("default_style", "")
@@ -412,7 +412,7 @@ def handle_upload_image(
             if style_prompts:
                 style_key = list(style_prompts.keys())[0]
             else:
-                return None, None, "未找到可用风格", False
+                return None, None, "未找到可用的创作风格", False
         else:
             style_key = default_style
         print(f"DEBUG - 使用默认风格: {style_key}")
@@ -425,7 +425,7 @@ def handle_upload_image(
     )
 
     # 如果成功生成，则显示风格选择
-    show_style = status_msg == "生成成功!" and len(token.used_image_hashes) > 0
+    show_style = status_msg == "创作成功!" and len(token.used_image_hashes) > 0
     # 缓存用户上传的图片
     if (output_image1 or output_image2):
         upload_dir = os.path.join(STORAGE_DIR, "results", token_id)
@@ -482,28 +482,36 @@ with gr.Blocks(analytics_enabled=False) as demo:
 
     # 设置CSS样式
     css = gr.HTML(get_css_for_theme("default"))
-
     # 登录界面
     with gr.Column(visible=True) as login_container:
-        gr.Markdown("# 欢迎来到哪吒形象生成")
-        gr.Markdown(f"""
-        请扫描二维码进入系统。
-
-        或者点击链接:
-        - [冰主题示例](http://{CONFIG['name']}:{CONFIG['port']}/?token=ice123)
-        - [火主题示例](http://{CONFIG['name']}:{CONFIG['port']}/?token=fire123)
-        """)
+        gr.Markdown(f"# {NEZHA_CONFIG.get('project_settings', {}).get('name', '传奇神话形象定制')}")
+        gr.Markdown("请扫描专属通行证二维码开始创作。")
+        gr.Image(
+            value="welcome.webp",
+            width="100%",
+            show_download_button=False,
+            show_fullscreen_button=False
+        )
         error_message = gr.Markdown("")
-
     # 主界面
     with gr.Column(visible=False) as main_container:
-        heading = gr.Markdown("# 哪吒形象生成")
+        with gr.Row():
+            heading = gr.Markdown("# 哪吒形象生成")
+            theme_logo = gr.Image(
+                label="",
+                visible=False,
+                width=42,
+                height=42,
+                show_label=False,
+                show_download_button=False,
+                show_fullscreen_button=False
+            )
         subheading = gr.Markdown("上传一张照片，生成你的专属形象")
 
         # 添加使用说明
         usage_instruction = gr.Markdown("""
         ### 使用说明
-        - 每个访问令牌只能用于**一张**照片
+        - 每个专属通行证只能用于**一张**照片
         - 对同一张照片，您可以尝试不同的风格（最多3种）
         - 请务必选择您最喜欢的照片，因为一旦使用就不能更换
         """, visible=True)
@@ -512,35 +520,43 @@ with gr.Blocks(analytics_enabled=False) as demo:
             with gr.Column(scale=1):
                 # 左侧面板 - 上传和控制
                 upload_image = gr.Image(
-                    label="上传照片",
+                    label="上传您的照片",
                     type="filepath",
                     height=300
                 )
                 # 风格选择器（初始隐藏）
                 style_dropdown = gr.Dropdown(
-                    label="选择风格",
+                    label="选择创作风格",
                     choices=[],
                     visible=False
                 )
                 with gr.Row():
-                    usage_info = gr.Markdown("使用次数: 0/0")
+                    usage_info = gr.Markdown("剩余使用次数: 0/0")
                     valid_until = gr.Markdown("有效期至: 未知")
 
                 generate_status = gr.Markdown("请上传图片")
-                upload_btn = gr.Button("生成图片")
+                upload_btn = gr.Button("开始创作")
 
             with gr.Column(scale=2):
                 # 右侧面板 - 显示结果
                 with gr.Row():
-                    output_image1 = gr.Image(label="生成结果 1", height=300)
-                    output_image2 = gr.Image(label="生成结果 2", height=300)
+                    output_image1 = gr.Image(
+                        label="创作结果 1",
+                        height=300,
+                        interactive=False
+                    )
+                    output_image2 = gr.Image(
+                        label="创作结果 2",
+                        height=300,
+                        interactive=False
+                    )
 
                 result_message = gr.Markdown("")
 
                 # 添加历史图片展示
-                gr.Markdown("### 历史生成记录")
+                gr.Markdown("### 您的创作历史")
                 history_gallery = gr.Gallery(
-                    label="历史图片",
+                    label="历史作品",
                     show_label=False,
                     elem_id="history_gallery",
                     columns=2,
@@ -552,7 +568,7 @@ with gr.Blocks(analytics_enabled=False) as demo:
     # 过期界面
     with gr.Column(visible=False) as expired_container:
         gr.Markdown("# 访问已过期")
-        expired_message = gr.Markdown("您的访问令牌已过期")
+        expired_message = gr.Markdown("您的访问令牌已过期，感谢您的使用")
 
     def load_interface(request: gr.Request = None):
         """页面加载时的处理函数"""
@@ -583,7 +599,7 @@ with gr.Blocks(analytics_enabled=False) as demo:
         if not is_valid:
             return {
                 "view": "login",
-                "error": error_msg or "请扫描二维码或使用有效链接访问",
+                "error": error_msg or "",
                 "token": ""
             }
 
@@ -630,17 +646,17 @@ with gr.Blocks(analytics_enabled=False) as demo:
                 login_container: gr.update(visible=False),
                 main_container: gr.update(visible=False),
                 expired_container: gr.update(visible=True),
-                expired_message: "您的访问令牌已过期",
+                expired_message: "您的专属通行证已过期，感谢您的使用",
                 css: get_css_for_theme(theme)
             }
 
         elif view == "main":
             if not current_token:
-                return update_ui({"view": "login", "error": "无效的访问令牌"})
+                return update_ui({"view": "login", "error": "无效的二维码"})
 
             _, _, token = auth_service.validate_token(current_token)
             if token is None:
-                return update_ui({"view": "login", "error": "无效的访问令牌"})
+                return update_ui({"view": "login", "error": "无效的二维码"})
 
             theme = token.theme
             stats = get_token_stats(current_token)
@@ -648,14 +664,13 @@ with gr.Blocks(analytics_enabled=False) as demo:
             history_images = get_token_history(current_token)
             can_generate = stats["usage_valid"]
             generate_message = (
-                "可以生成图片" if can_generate else
-                f"生成功能已过期 ({stats['usage_valid_until']})"
+                "可以开始创作" if can_generate else
+                f"创作功能已过期 ({stats['usage_valid_until']})"
             )
 
-            # 如果令牌已经使用过图片，更新提示信息
             instruction_text = """
             ### 使用说明
-            - 每个访问令牌只能用于**一张**照片
+            - 每个二维码只能用于**一张**照片
             - 对同一张照片，您可以尝试不同的风格（最多3种）
             - 请务必选择您最喜欢的照片，因为一旦使用就不能更换
             """
@@ -666,8 +681,8 @@ with gr.Blocks(analytics_enabled=False) as demo:
 
                 instruction_text = f"""
                 ### 使用说明
-                - 您已经使用此令牌上传了一张照片
-                - 已使用的风格: {used_styles_str}
+                - 您已经使用此二维码上传了一张照片
+                - 已创作的风格: {used_styles_str}
                 - 剩余可用风格数: {remaining_styles}种
                 - 请继续使用相同的照片，**不能更换其他照片**
                 """
@@ -675,12 +690,20 @@ with gr.Blocks(analytics_enabled=False) as demo:
             # 判断是否显示风格选择
             show_style_dropdown = len(token.used_image_hashes) > 0
 
+            # 获取主题logo
+            # 获取主题logo路径，需要从STYLE_PATH的nezha目录下获取
+            theme_logo_path = os.path.join(STYLE_PATH, 'nezha', NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('ui', {}).get('logo', ''))
+            print(f"DEBUG - 主题logo路径: {theme_logo_path}")
+            theme_logo_url = theme_logo_path if os.path.exists(theme_logo_path) else ''
+            show_theme_logo = bool(theme_logo_url)
+
             return {
                 login_container: gr.update(visible=False),
                 main_container: gr.update(visible=True),
                 expired_container: gr.update(visible=False),
-                heading: f"# {NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('name', theme)}",
-                subheading: NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('description', ''),
+                heading: f"# 与{NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('name', theme)}合影吧~",
+                theme_logo: gr.update(value=theme_logo_url, visible=show_theme_logo),
+                subheading: f" 场景: {NEZHA_CONFIG.get('themes', {}).get(theme, {}).get('description', '')}",
                 usage_instruction: instruction_text,
                 style_dropdown: gr.update(choices=[option["label"] for option in style_options], visible=show_style_dropdown),
                 usage_info: f"使用次数: {stats['usage_count']}/{stats['max_usage_count']} · 剩余: {stats['usage_remaining']}次",
@@ -706,7 +729,7 @@ with gr.Blocks(analytics_enabled=False) as demo:
         inputs=page_state,
         outputs=[
             login_container, main_container, expired_container,
-            error_message, heading, subheading, usage_instruction, style_dropdown,
+            error_message, heading, theme_logo, subheading, usage_instruction, style_dropdown,
             usage_info, valid_until, generate_status, upload_btn,
             expired_message, history_gallery, css
         ]
@@ -747,19 +770,30 @@ if __name__ == "__main__":
     # 获取环境变量
     share_env = os.getenv("SHARE", "False")
     share_setting = share_env.lower() in ('true', 'yes', '1', 't', 'y')
+    print(f"分享设置 (从环境变量): {share_setting}")
 
     # 启动前的准备
-    print(f"\n===== 哪吒形象生成系统 v{NEZHA_CONFIG.get('project_settings', {}).get('version', '1.0.0')} =====")
+    print(f"\n===== 传奇神话形象定制系统 v{NEZHA_CONFIG.get('project_settings', {}).get('version', '1.0.0')} =====")
     print("配置信息:")
     print(f"  - 服务地址: {CONFIG['name']}:{CONFIG['port']}")
     print(f"  - 缓存目录: {CACHE_DIR}")
     print(f"  - 存储目录: {STORAGE_DIR}")
     print(f"  - 主题数量: {len(NEZHA_CONFIG.get('themes', {}))} 个")
-    print(f"  - 令牌文件: {TOKENS_FILE}")
+    print(f"  - 通行证文件: {TOKENS_FILE}")
+    print(f"  - 分享模式: {'启用' if share_setting else '禁用'}")
 
     # 启动应用
     try:
         print(f"\n启动应用: http://{CONFIG['name']}:{CONFIG['port']}")
+        print("如果需要启用分享模式，请设置环境变量 SHARE=True 后重新启动")
+        print("如果分享链接生成失败，请运行 diagnose_gradio.py 来诊断问题")
+
+        # 强制设置分享选项，确保正确应用
+        if share_setting:
+            print("正在尝试生成分享链接...")
+            os.environ["GRADIO_SHARE"] = "true"
+
+        # 启动Gradio应用
         demo.launch(
             server_name=CONFIG["name"],
             server_port=CONFIG["port"],

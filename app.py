@@ -230,8 +230,8 @@ with gr.Blocks(theme="soft") as demo:
         )
 
 if __name__ == "__main__":
-    cert_file = os.path.join(current_dir, "localhost+1.pem")
-    key_file = os.path.join(current_dir, "localhost+1-key.pem")
+    cert_file = os.path.join(current_dir, "izumilife.xyz.pem")
+    key_file = os.path.join(current_dir, "izumilife.xyz.key")
 
     if os.path.exists(cert_file) and os.path.exists(key_file):
         demo.launch(

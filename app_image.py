@@ -51,7 +51,6 @@ with open(CONFIG_PATH, 'r', encoding='utf-8') as config_file:
 # 修改后的常量定义
 IMAGE_NUMBER = CONFIG["image_generation"]["default_image_number"]
 ASPECT_RATIO = AspectRatio[CONFIG["image_generation"]["aspect_ratio"]]
-SERVER_PORT = CONFIG["server"]["port"]
 ERROR_PATTERNS = CONFIG["error_patterns"]
 
 # 缓存文件路径
@@ -62,6 +61,7 @@ IMAGE_CACHE_DIR = os.path.join(CACHE_DIR, CONFIG["cache"]["image_dir"])
 
 
 load_dotenv(os.path.join(current_dir, ".env"))
+
 app_id = os.getenv("FEISHU_APP_ID", "")
 app_secret = os.getenv("FEISHU_APP_SECRET", "")
 FEISHU_RECEIVE_ID = os.getenv("RECEIVE_ID", "")
@@ -399,10 +399,34 @@ if __name__ == "__main__":
     share_env = os.getenv("SHARE", "False")
     share_setting = share_env.lower() in ('true', 'yes', '1', 't', 'y')
 
+    ssl_enabled = os.getenv("SSL_ENABLED", "False")
+    ssl_setting = ssl_enabled.lower() in ('true', 'yes', '1', 't', 'y')
+    if not ssl_setting:
+        SERVER_PORT = CONFIG["server"]["port"]
+        cert_file = None
+        key_file = None
+    else:
+        SERVER_PORT = CONFIG["server"]["port"] if CONFIG["server"]["port"] not in [80, 443] else 443
+        site_name = os.getenv("SITE_NAME", "Default_Whisk_Site")
+        cert_file = os.path.join(current_dir, f"{site_name}.pem")
+        if not os.path.exists(cert_file):
+            # print(f"SSL证书文件 {cert_file} 不存在，使用非SSL模式")
+            cert_file = None
+            key_file = None
+        else:
+            key_file = os.path.join(current_dir, f"{site_name}.key")
+            if not os.path.exists(key_file):
+                # print(f"SSL密钥文件 {key_file} 不存在，使用非SSL模式")
+                cert_file = None
+                key_file = None
+            # else:
+            #     print(f"SSL证书文件 {cert_file} 和密钥文件 {key_file} 存在，使用SSL模式")
     demo.launch(
         server_name=CONFIG["server"]["name"],
-        server_port=SERVER_PORT,      # 使用配置值
-        ssl_verify=CONFIG["server"]["ssl_verify"],
+        # server_name=site_name,
+        # server_port=SERVER_PORT,      # 使用配置值
+        ssl_certfile=cert_file,
+        ssl_keyfile=key_file,
         share=share_setting,
         allowed_paths=[IMAGE_CACHE_DIR]
     )

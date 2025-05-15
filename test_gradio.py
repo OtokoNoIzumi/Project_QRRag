@@ -48,4 +48,4 @@ with gr.Blocks() as demo:
     )
 
 if __name__ == "__main__":
-    demo.launch()  # 设置 share=True 以创建公共链接
+    demo.launch(share=True)  # 设置 share=True 以创建公共链接
