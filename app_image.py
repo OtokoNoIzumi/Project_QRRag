@@ -426,6 +426,7 @@ if __name__ == "__main__":
         server_port=SERVER_PORT,      # 使用配置值
         ssl_certfile=cert_file,
         ssl_keyfile=key_file,
+        ssl_verify=False,       # <--- 这个参数至关重要！
         share=share_setting,
         allowed_paths=[IMAGE_CACHE_DIR]
     )
