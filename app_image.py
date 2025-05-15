@@ -423,8 +423,7 @@ if __name__ == "__main__":
             #     print(f"SSL证书文件 {cert_file} 和密钥文件 {key_file} 存在，使用SSL模式")
     demo.launch(
         server_name=CONFIG["server"]["name"],
-        # server_name=site_name,
-        # server_port=SERVER_PORT,      # 使用配置值
+        server_port=SERVER_PORT,      # 使用配置值
         ssl_certfile=cert_file,
         ssl_keyfile=key_file,
         share=share_setting,
