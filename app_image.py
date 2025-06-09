@@ -85,6 +85,10 @@ app_id = os.getenv("FEISHU_APP_ID", "")
 app_secret = os.getenv("FEISHU_APP_SECRET", "")
 FEISHU_RECEIVE_ID = os.getenv("RECEIVE_ID", "")
 
+# 管理员鉴权配置
+ADMIN_SECRET_KEY = os.getenv("ADMIN_SECRET_KEY", "")  # 管理员密钥
+ALLOWED_ADMIN_IPS = ["127.0.0.1", "localhost", "::1"]  # 允许的管理员IP
+
 # 改进后的飞书客户端初始化（更Pythonic的写法）
 FEISHU_CLIENT = None
 FEISHU_ENABLED = False
@@ -119,6 +123,60 @@ def get_client_info(request: gr.Request) -> str:
                 client_ip = getattr(request.client, 'host', 'unknown')
 
     return f"IP:{client_ip}"
+
+
+def get_client_ip(request: gr.Request) -> str:
+    """获取客户端IP地址"""
+    if not request:
+        return "unknown"
+
+    # 获取客户端IP
+    if hasattr(request, 'headers'):
+        # 检查代理头
+        forwarded_for = request.headers.get('X-Forwarded-For')
+        if forwarded_for:
+            return forwarded_for.split(',')[0].strip()
+        else:
+            real_ip = request.headers.get('X-Real-IP')
+            if real_ip:
+                return real_ip
+            elif hasattr(request, 'client') and request.client:
+                return getattr(request.client, 'host', 'unknown')
+
+    return "unknown"
+
+
+def verify_admin_access(request: gr.Request, admin_secret_key: Optional[str] = None) -> bool:
+    """
+    验证管理员访问权限
+
+    Args:
+        request: Gradio请求对象
+        admin_secret_key: 可选的管理员密钥
+
+    Returns:
+        bool: 是否有权限访问
+    """
+    client_ip = get_client_ip(request)
+
+    # 检查IP是否在允许列表中
+    is_allowed_ip = client_ip in ALLOWED_ADMIN_IPS
+
+    # 检查密钥是否正确
+    is_valid_key = False
+    if ADMIN_SECRET_KEY and admin_secret_key:
+        is_valid_key = ADMIN_SECRET_KEY == admin_secret_key
+
+    # 满足任一条件即可访问
+    has_access = is_allowed_ip or is_valid_key
+
+    # 日志信息优化：显示密钥是否匹配而不是是否提供
+    if not has_access:
+        debug_utils.log_and_print(f"⚠️ 未授权的API访问尝试，IP: {client_ip}, 密钥匹配: {'是' if is_valid_key else '否'}", log_level="WARNING")
+    else:
+        debug_utils.log_and_print(f"✅ 授权的API访问，IP: {client_ip}, 密钥匹配: {'是' if is_valid_key else '否'}", log_level="INFO")
+
+    return has_access
 
 
 class WhiskService:
@@ -542,8 +600,17 @@ def get_auth_status_api() -> Dict[str, Any]:
     """内部API：获取认证状态"""
     return whisk_service.get_auth_status()
 
-def update_auth_config_api(variable_name: str, new_value: str) -> Dict[str, Any]:
+def update_auth_config_api(variable_name: str, new_value: str,
+                           admin_secret_key: str = None,
+                           request: gr.Request = None) -> Dict[str, Any]:
     """内部API：更新认证配置"""
+    # 验证管理员权限
+    if not verify_admin_access(request, admin_secret_key):
+        return {
+            "success": False,
+            "error": "权限验证失败",
+            "message": "配置更新失败"
+        }
     return whisk_service.update_auth_config(variable_name, new_value)
 
 # Gradio界面
@@ -608,17 +675,13 @@ if __name__ == "__main__":
         site_name = os.getenv("SITE_NAME", "Default_Whisk_Site")
         cert_file = os.path.join(current_dir, f"{site_name}.pem")
         if not os.path.exists(cert_file):
-            # print(f"SSL证书文件 {cert_file} 不存在，使用非SSL模式")
             cert_file = None
             key_file = None
         else:
             key_file = os.path.join(current_dir, f"{site_name}.key")
             if not os.path.exists(key_file):
-                # print(f"SSL密钥文件 {key_file} 不存在，使用非SSL模式")
                 cert_file = None
                 key_file = None
-            # else:
-            #     print(f"SSL证书文件 {cert_file} 和密钥文件 {key_file} 存在，使用SSL模式")
     demo.launch(
         server_name=CONFIG["server"]["name"],
         server_port=SERVER_PORT,      # 使用配置值
