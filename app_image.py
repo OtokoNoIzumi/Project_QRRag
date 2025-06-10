@@ -103,28 +103,6 @@ else:
     debug_utils.log_and_print("⚠️ 飞书通知功能已禁用: 缺少FEISHU_APP_ID或FEISHU_APP_SECRET环境变量", log_level="WARNING")
 
 
-def get_client_info(request: gr.Request) -> str:
-    """获取客户端信息，包括IP地址"""
-    if not request:
-        return "unknown_client"
-
-    # 获取客户端IP
-    client_ip = "unknown"
-    if hasattr(request, 'headers'):
-        # 检查代理头
-        forwarded_for = request.headers.get('X-Forwarded-For')
-        if forwarded_for:
-            client_ip = forwarded_for.split(',')[0].strip()
-        else:
-            real_ip = request.headers.get('X-Real-IP')
-            if real_ip:
-                client_ip = real_ip
-            elif hasattr(request, 'client') and request.client:
-                client_ip = getattr(request.client, 'host', 'unknown')
-
-    return f"IP:{client_ip}"
-
-
 def get_client_ip(request: gr.Request) -> str:
     """获取客户端IP地址"""
     if not request:
@@ -144,6 +122,12 @@ def get_client_ip(request: gr.Request) -> str:
                 return getattr(request.client, 'host', 'unknown')
 
     return "unknown"
+
+
+def get_client_info(request: gr.Request) -> str:
+    """获取客户端信息，包括IP地址"""
+    client_ip = get_client_ip(request)
+    return f"IP:{client_ip}"
 
 
 def verify_admin_access(request: gr.Request, admin_secret_key: Optional[str] = None) -> bool:
